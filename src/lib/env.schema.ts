@@ -32,6 +32,11 @@ export const serverEnvSchema = publicEnvSchema.extend({
     (v) => (v === "" || v === undefined ? undefined : Number(v)),
     z.number().int().min(1000).max(30000).default(9000),
   ),
+  /** Step 8: global Gemini requests per minute for this server (rate limiter in src/lib/ai/gemini.ts). */
+  GEMINI_MAX_RPM: z.preprocess(
+    (v) => (v === "" || v === undefined ? undefined : Number(v)),
+    z.number().int().min(1).max(1000).optional(),
+  ),
   PAYPAL_ENV: z.preprocess(
     (v) => (v === "" || v === undefined ? "sandbox" : v),
     z.literal("sandbox", { error: "PAYPAL_ENV must be 'sandbox'. ScamSense never runs live PayPal." }),

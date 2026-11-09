@@ -23,9 +23,36 @@ export class TrustedWriterNotConfiguredError extends Error {
 
 /** Typed signatures of the trusted-writer database functions (see the migration for their contracts). */
 type Fn<Args> = { Args: Args; Returns: unknown };
+/** Insert-only tables the trusted writer fills directly (Step 8 caches). */
+type InsertOnly<Row> = { Row: Row; Insert: Row; Update: Partial<Row>; Relationships: [] };
+export type ProfileInterpretationRow = {
+  user_id: string;
+  fingerprint: string;
+  classifier_version: string;
+  status: "mapped" | "partial" | "unmapped";
+  source: "gemini";
+  activity_tags: string[];
+  context_tags: string[];
+  context_summary: string | null;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+};
+export type ModuleScenarioOrderRow = {
+  user_id: string;
+  module_key: string;
+  scenario_order: string[];
+  scores: unknown;
+  routing_source: string;
+  interpretation_fingerprint: string | null;
+  routing_version: string;
+};
 export interface TrustedWriterDatabase {
   public: {
-    Tables: Record<string, never>;
+    Tables: {
+      profile_interpretations: InsertOnly<ProfileInterpretationRow>;
+      module_scenario_orders: InsertOnly<ModuleScenarioOrderRow>;
+    };
     Views: Record<string, never>;
     Functions: {
       start_module_run: Fn<{
@@ -90,6 +117,62 @@ export interface TrustedWriterDatabase {
         p_payment_safety_points: number;
         p_reasoning_source: "gemini" | "fallback";
         p_addressed_evidence_ids: string[];
+        p_verification_action_ids: string[];
+        p_scoring_version: string;
+        p_payment_classification: "spending" | "fraud_loss" | null;
+      }>;
+      /** Step 8 (supabase/migrations/20261112090000_hybrid_intelligence.sql). */
+      claim_scenario_personalization: Fn<{
+        p_user_id: string;
+        p_scenario_key: string;
+        p_content_version: string;
+      }>;
+      complete_scenario_personalization: Fn<{
+        p_user_id: string;
+        p_personalization_id: string;
+        p_source: "gemini" | "fallback";
+        p_slots: Record<string, string>;
+        /** Added by 20261113090000_personalization_intro.sql (optional, defaults to null). */
+        p_intro_line?: string | null;
+        p_fallback_reason: string | null;
+        p_model: string | null;
+        p_prompt_version: string;
+        p_input_tokens: number | null;
+        p_output_tokens: number | null;
+        p_latency_ms: number | null;
+      }>;
+      link_attempt_personalization: Fn<{
+        p_user_id: string;
+        p_attempt_id: string;
+        p_personalization_id: string;
+      }>;
+      claim_attempt_evaluation: Fn<{ p_user_id: string; p_attempt_id: string }>;
+      fail_attempt_evaluation: Fn<{ p_user_id: string; p_attempt_id: string; p_reason: string }>;
+      record_attempt_evaluation: Fn<{
+        p_user_id: string;
+        p_attempt_id: string;
+        p_source: "gemini" | "fallback";
+        p_model: string | null;
+        p_prompt_version: string;
+        p_decision_correct: boolean;
+        p_decision_assessment: string;
+        p_recognized_evidence_ids: string[];
+        p_missed_evidence_ids: string[];
+        p_unsupported_assumptions: string[];
+        p_reasoning_explanation: string;
+        p_verification_feedback: string;
+        p_payment_behavior_feedback: string;
+        p_improvement_advice: string;
+        p_educational_takeaway: string;
+        p_humorous_comment: string;
+        p_evaluation_confidence: string | null;
+        p_input_tokens: number | null;
+        p_output_tokens: number | null;
+        p_latency_ms: number | null;
+        p_decision_points: number;
+        p_reasoning_points: number;
+        p_verification_points: number;
+        p_payment_safety_points: number;
         p_verification_action_ids: string[];
         p_scoring_version: string;
         p_payment_classification: "spending" | "fraud_loss" | null;

@@ -14,6 +14,7 @@ import { Dialog } from "@/components/ui/Modal";
 import { SimProvider, type SimApi } from "../sim/SimContext";
 import { Workspace } from "../sim/Workspace";
 import { CheckoutPanel } from "./CheckoutPanel";
+import { EvaluationPanel } from "./EvaluationPanel";
 import { clearDraft, ExplanationPanel } from "./ExplanationPanel";
 
 type ClientEvent =
@@ -189,6 +190,9 @@ export function ScenarioPlayer({ initialView }: { initialView: ClientAttemptView
           <p className="mt-3 text-caption text-teal/85">
             Fictional scenario · never enter real passwords, codes, or card numbers · there is no timer.
           </p>
+          {view.personalized && (
+            <p className="mt-2 text-caption text-teal/85">Story details are personalized to your profile.</p>
+          )}
           <Button className="mt-6" size="lg" loading={busy} onClick={() => void send({ type: "START" })}>
             Begin
           </Button>
@@ -272,17 +276,21 @@ export function ScenarioPlayer({ initialView }: { initialView: ClientAttemptView
               <p className="mt-2 break-words whitespace-pre-line">{view.justification}</p>
             </div>
           )}
-          <p className="mt-5 flex items-start gap-2 text-small">
-            <Icon name="info" className="mt-0.5 size-4 shrink-0" />
-            {view.state === "COMPLETED"
-              ? "This attempt is complete."
-              : "Your decision is ready for evaluation. Feedback, Reveal the Red Flags, and Your Recovery Playbook for this attempt are added in a later build step. Nothing about this attempt can change now."}
-          </p>
-          <div className="mt-6 flex justify-center">
-            <ButtonLink href={moduleHref} iconRight={<Icon name="arrow-right" className="size-5" />}>
-              Back to module
-            </ButtonLink>
-          </div>
+          {view.state === "COMPLETED" ? (
+            <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+              <ButtonLink
+                href={`/play/${view.attemptId}/results`}
+                iconRight={<Icon name="arrow-right" className="size-5" />}
+              >
+                See your results
+              </ButtonLink>
+              <ButtonLink href={moduleHref} variant="secondary">
+                Back to module
+              </ButtonLink>
+            </div>
+          ) : (
+            <EvaluationPanel attemptId={view.attemptId} />
+          )}
         </Card>
       )}
 

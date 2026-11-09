@@ -1,6 +1,6 @@
 # ScamSense — Product Specification
 
-Status: updated for Phase 5 (Step 7: genuine PayPal Sandbox checkout). This is the functional source of truth. It must stay consistent with the
+Status: updated for Phase 6 (Step 8: hybrid routing, Gemini personalization, Gemini reasoning evaluation). This is the functional source of truth. It must stay consistent with the
 **ScamSense Product Experience — Non-Negotiable Rules** in `CLAUDE.md`, including both the core principles and the
 detailed rules. Rule references such as (R10) point to that section.
 
@@ -43,18 +43,26 @@ stable machine-readable identifiers (`src/content/profileOptions.ts`) for the fu
 | Sign-up | Age bracket | **Optional** | `18_24`,`25_34`,`35_44`,`45_54`,`55_64`,`65_plus` (or none) |
 | Sign-up | "At least 18" confirmation | Yes | `age_confirmed` + timestamp |
 | 1 About you | Occupation / life stage | Yes | `student`,`employed_professional`,`freelancer`,`business_owner`,`self_employed`,`job_seeker`,`retired`,`other` |
+| 1 About you | Occupation description | **Required only when "Other"** (Step 8) | free text 3–80 chars, must contain letters; cleared when another option is chosen |
 | 1 About you | Country of residence | Yes | ISO 3166-1 alpha-2 code |
-| 2 Activities | Financial activities | Yes (≥1) | `online_shopping`,`online_selling`,`freelance_payments`,`sending_invoices`,`receiving_invoices`,`job_applications`,`business_purchases`,`subscription_payments`,`investments`,`digital_wallet_usage` |
+| 2 Activities | Financial activities | Yes (≥1) | `online_shopping`,`online_selling`,`freelance_payments`,`sending_invoices`,`receiving_invoices`,`job_applications`,`business_purchases`,`subscription_payments`,`investments`,`digital_wallet_usage`,`other` (Step 8) |
+| 2 Activities | Other activity description | **Required only when "Other"** (Step 8) | free text 3–160 chars; cleared when "Other" is unticked |
 | 2 Activities | Digital payment experience | Yes | `new`,`occasional`,`frequent` |
 | 3 Goals | Financial goal | Yes | `buying_laptop`,`vacation_travel`,`building_savings`,`education`,`business_growth`,`paying_off_debt`,`other` |
-| 3 Goals | Custom goal details | Optional | free text ≤120 chars |
+| 3 Goals | Custom goal details | **Required when the goal is "Other"**, optional otherwise (Step 8) | free text ≤120 chars (3+ with letters when required) |
 | 3 Goals | Goal amount | Optional | integer minor units of the preferred currency |
 | 3 Goals | Monthly income bracket | Optional | `prefer_not_to_say`,`under_1000`,`1000_2499`,`2500_4999`,`5000_9999`,`10000_plus` (USD ranges) + derived display label. Never an exact income |
 | 3 Goals | Preferred currency | Yes (default **USD**) | Server-validated allowlist of currencies verified with the configured PayPal Sandbox merchant (R4). **Currently USD only** (§5.1, ARCHITECTURE §9) |
 
 The profile is used only to personalize scenario surface details, feedback wording, goal-based humor, illustrative
-training budgets, and the chatbot. It never changes answer keys, correctness, or difficulty (R13). No bank balances or
-account information are collected.
+training budgets, the routed order of a module's two scenarios, and the chatbot. It never changes answer keys,
+correctness, or difficulty (R13). No bank balances or account information are collected.
+
+**Step 8 inspection result (before the change):** occupation "Other" and goal "Other / custom goal" existed; a custom
+goal text existed but was optional even for "Other"; there was **no** occupation description, **no** "Other"
+financial activity, and **no** activity description. All three are now implemented as above, in onboarding (same three
+steps) and on My Profile, validated in the browser, the API (Zod, with Unicode normalization and markup characters
+removed), and the database (`20261112090000_hybrid_intelligence.sql`). Free text is always treated as untrusted data.
 
 ## 3. Learning structure
 
@@ -93,15 +101,23 @@ completion (R10). All organisations are fictional; TandemPay is the fictional pa
 | M3-S1 | **The Job Opportunity** | "You've received an update about a job opportunity." | Chat/email + browser | 5 (+3) | Scam | Yes: "Pay request" (equipment deposit) |
 | M3-S2 | **The Seller's Dilemma** | "A buyer has contacted you about an item you're selling." | Marketplace (seller hub) + mail + TandemPay | 4 (+3, +2) | Scam | No (the decision is whether to ship) |
 
-Final content lives in `src/content/scenarios/<key>/` (render + server-only answer key). Which of a module's two
-scenarios is suggested first is ranked by the deterministic personalization algorithm in Step 8 using the templates'
-activity/context tags; slot keys, titles, and amounts never move.
+Final content lives in `src/content/scenarios/<key>/` (render + server-only answer key).
+
+### 3.4 Scenario order within a module (Step 8, hybrid routing)
+When a module starts, its two scenarios are ranked by a deterministic relevance score and the order is saved once for
+that learner and module (ARCHITECTURE §19). The first is shown as recommended ("Ordered for you"); **both remain
+required** and either can still be played first. Refreshes, new sign-ins, profile edits, and replays never change a
+saved order. Gemini never chooses scenarios: for a meaningful custom "Other" description it only maps the meaning onto
+the approved tag vocabulary, which the formula then uses. A custom goal never affects the order. Scores are relevance
+to reported activities, never a probability of being scammed, and age is never an input.
 
 ## 4. Scenario experience
 
 ### 4.1 Flow
 1. **Neutral intro (R9).** One line only, for example: "You've received a new message in your inbox." It contains no
-   hints, warnings, or judgment words.
+   hints, warnings, or judgment words. Since Step 8 it is personalized by Gemini for each learner (for example "You're
+   browsing a laptop listing suitable for your digital art commissions."), validated against the scenario's real
+   setting, and replaced by the authored line whenever validation fails.
 2. **Explore (R8).** The user explores an immersive, interactive fictional environment, such as an email client,
    chat, website, invoice, marketplace, or payment request. They can open messages, follow in-simulation navigation,
    inspect sender details, view the (non-functional) address bar, and so on.
@@ -131,13 +147,18 @@ activity/context tags; slot keys, titles, and amounts never move.
    decision and explanation stay locked either way. After a verified payment the player sees the Sandbox amount,
    capture ID and order ID, and (scored attempt) the Training Funds deduction; the attempt waits for evaluation
    (Step 8). Payment-enabled scenarios: M2-S1, M2-S2, M3-S1 (§3.3).
-7. **Feedback** (Step 8, after the attempt is finalized). This shows:
-   - Decision outcome (deterministic: whether the decision matches the answer key).
-   - Fictional wallet impact (deterministic).
-   - Reasoning assessment: which predetermined evidence the user's reasoning identified, with factual explanations
-     (Gemini, grounded in the answer key, R13–R14).
-   - A separate short, personalized, lighthearted comment (Gemini, R14).
-   - The safest next step (authored).
+7. **Feedback** (Step 8, implemented). Once the attempt is FINALIZED the player sees "Reviewing your reasoning…" while
+   ONE Gemini request evaluates their written explanation; the attempt then completes and the results page shows:
+   - Decision outcome (deterministic: whether the decision matches the answer key) and the story outcome (authored).
+   - The score (deterministic, §4.4); practice attempts are labelled and never official.
+   - Fictional wallet impact (deterministic), and that the PayPal payment was Sandbox test money only.
+   - Feedback on the reasoning (Gemini, grounded in the answer key): what they did well, assumptions to double-check,
+     their checking, their payment behaviour, what to do next time; evidence they noticed vs. worth a second look.
+   - A separate short, personalized, witty comment ("Just for fun"), generated in the same request (R14).
+   - A takeaway and the safest next step (authored).
+   - Links to Reveal the Red Flags and Your Recovery Playbook (their full content is Step 9).
+   If Gemini fails, nothing is invented: the learner can try again, or choose clearly labelled basic feedback (authored
+   text + keyword check; a fixed encouragement line instead of a joke). Evaluation never repeats a payment.
 8. **Reveal the Red Flags (R15, R16).** Available only after completion. The scenario environment is shown again in
    reveal mode, with each piece of evidence highlighted and labeled as one of:
    - **Red flag**: a warning sign.
@@ -180,8 +201,10 @@ never by color alone.
 | Payment safety | 10 | Full points unless the user took one of the scenario's unsafe payment or credential actions |
 
 Totals: 200 per module and 600 overall, shown on the dashboard as "Total score". Scores are computed by
-`src/lib/domain/scoring.ts` and stored immutably with a scoring version. No AI assessment is invented: until Phase 6
-there is no evaluator, so no score is produced outside tests. XP levels and streaks remain out of scope (§11).
+`src/lib/domain/scoring.ts` and stored immutably with a scoring version. Since Step 8 the evidence IDs come from the
+Gemini evaluation (unknown IDs discarded) or, only after a Gemini failure and the learner's choice, from the keyword
+fallback; Gemini never returns or sets points. A pay decision finalized without a completed payment ("finish without
+paying") is scored as the decision chosen (resolves open question 10). XP levels and streaks remain out of scope (§11).
 
 ## 5. Training funds (fictional wallet) — R18–R20
 
@@ -298,8 +321,9 @@ Training Funds strip sits at the top and the cards stack.
 
 | Dependency down | Behavior |
 |---|---|
-| Gemini (personalization) | Scenario uses authored default surface text |
-| Gemini (evaluation) | Deterministic evidence matching plus authored explanations, with a neutral fallback comment instead of humor |
+| Gemini (routing) | Predefined tags only; custom text gets neutral context (nothing is guessed); the order is still saved |
+| Gemini (personalization) | Scenario uses the authored story details, stored as a tracked fallback; play continues |
+| Gemini (evaluation) | Attempt stays FINALIZED with everything saved; "Try again", or clearly labelled basic feedback (authored explanations + keyword matching, a fixed encouragement line instead of humor) |
 | Gemini (chat) | Friendly fallback message with links |
 | Zapier | Certificate stays visible on screen, and the email can be retried |
 | PayPal Sandbox | The payment step shows "Sandbox checkout unavailable" (missing credentials) or "couldn't confirm with PayPal yet, check again" (outage or lost response). The user can cancel, retry, or finish without paying (the decision stays locked). Checking again reads the order and never charges twice. No payment is faked as a PayPal transaction. |
@@ -327,8 +351,15 @@ non-U.S. recovery policies, multiple languages, and admin CMS.
    PayPal (R29, R34). The debrief can connect it to PayPal. Confirm this is acceptable.
 9. At the lowest Training Funds level (US$500), M2-S2's laptop costs US$60 (12%). The whole market is priced
    relative to it so it never looks "too cheap", but the absolute price is unrealistic. Consider a minimum amount.
-10. "Finish without paying" after a cancelled checkout finalizes a pay decision with no payment. Step 8 must decide
-   how that scores (currently: the decision counts as chosen; no ledger entry).
+10. ~~"Finish without paying" scoring~~ Resolved in Step 8: scored as the decision chosen (§4.4); no ledger entry.
 11. No MVP scenario targets the "investments" or "sending invoices" activities; routing falls back for them.
 12. (Step 7) In PayPal's window the buyer sees the ScamSense Sandbox merchant, not the fictional payee (real PayPal UI
    must not impersonate a fictional or real third party). The checkout panel says so. Confirm this is acceptable.
+13. ~~Generated intros~~ Resolved (owner decision, 2026-11-13): Gemini personalizes the neutral one-line introduction
+   of every newly played scenario, in the same personalization request. Each intro is checked against the scenario's
+   authoritative setting (channel, roles, situation: e.g. a marketplace must stay an ONLINE marketplace) and for
+   spoilers, hints, instructions, invented names, digits, and links; a rejected intro falls back to the authored one.
+14. ~~Results states~~ Approved (owner decision, 2026-11-13): REVIEW_AVAILABLE and RECOVERY_AVAILABLE are reached
+   automatically with the feedback; the Reveal the Red Flags and Recovery Playbook screens arrive in Step 9.
+15. ~~M1-S2 routing tag~~ Approved (owner decision, 2026-11-13): M1-S2 keeps the `subscriptions` routing tag.
+

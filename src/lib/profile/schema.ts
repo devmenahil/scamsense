@@ -2,7 +2,10 @@ import { z } from "zod";
 import { COUNTRY_CODES } from "@/content/countries";
 import {
   AGE_BRACKET_VALUES,
+  CUSTOM_ACTIVITY_MAX,
   CUSTOM_GOAL_MAX,
+  CUSTOM_OCCUPATION_MAX,
+  CUSTOM_TEXT_MIN,
   DISPLAY_NAME_MAX,
   FINANCIAL_ACTIVITY_VALUES,
   FINANCIAL_GOAL_VALUES,
@@ -56,10 +59,70 @@ const incomeBracketSchema = z.preprocess(
   z.enum(INCOME_BRACKET_VALUES, { error: "Choose an income bracket from the list." }).nullable(),
 );
 const financialGoalSchema = z.enum(FINANCIAL_GOAL_VALUES, { error: "Choose a financial goal." });
-const customGoalSchema = z.preprocess(
-  blankToNull,
-  z.string().trim().max(CUSTOM_GOAL_MAX, `Keep it under ${CUSTOM_GOAL_MAX} characters.`).nullable(),
-);
+/**
+ * Safe handling for free-text profile descriptions (Step 8): Unicode-normalized, control characters and markup/
+ * template characters removed, whitespace collapsed. The text is still treated as UNTRUSTED data everywhere it is used
+ * (never as instructions to Gemini, never logged).
+ */
+export function cleanCustomText(v: unknown): unknown {
+  if (typeof v !== "string") return v;
+  const cleaned = v
+    .normalize("NFKC")
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+    .replace(/[<>{}\[\]`\\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned === "" ? null : cleaned;
+}
+
+/** Optional free text: blank → null; max length enforced. Whether it is REQUIRED is decided per "Other" option. */
+function customTextSchema(max: number) {
+  return z
+    .preprocess(
+      (v) => (v === undefined ? null : cleanCustomText(v)),
+      z.string().max(max, `Keep it under ${max} characters.`).nullable(),
+    )
+    .optional()
+    .transform((v) => v ?? null);
+}
+const customGoalSchema = customTextSchema(CUSTOM_GOAL_MAX);
+const customOccupationSchema = customTextSchema(CUSTOM_OCCUPATION_MAX);
+const customActivitySchema = customTextSchema(CUSTOM_ACTIVITY_MAX);
+
+/** A required "Other" description must be a meaningful phrase: at least a few characters including letters. */
+export function isMeaningfulCustomText(v: string | null | undefined): boolean {
+  return typeof v === "string" && v.length >= CUSTOM_TEXT_MIN && /\p{L}.*\p{L}/u.test(v);
+}
+
+type OtherFields = {
+  occupation?: string;
+  customOccupation?: string | null;
+  financialActivities?: readonly string[];
+  customActivity?: string | null;
+  financialGoal?: string;
+  customGoal?: string | null;
+};
+
+/** "Other" ⇒ a short description is required (Step 8 brief §2). Only checks the fields present in the value. */
+function requireOtherDescriptions(v: OtherFields, ctx: z.RefinementCtx) {
+  if (v.occupation === "other" && !isMeaningfulCustomText(v.customOccupation)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["customOccupation"],
+      message: "Briefly describe your occupation or life stage.",
+    });
+  }
+  if (v.financialActivities?.includes("other") && !isMeaningfulCustomText(v.customActivity)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["customActivity"],
+      message: "Briefly describe your other financial activity.",
+    });
+  }
+  if (v.financialGoal === "other" && !isMeaningfulCustomText(v.customGoal)) {
+    ctx.addIssue({ code: "custom", path: ["customGoal"], message: "Briefly describe your goal." });
+  }
+}
 export const currencySchema = z.enum(SUPPORTED_CURRENCY_CODES, {
   error: "Choose a currency from the list. Other currencies aren't supported yet.",
 });
@@ -67,36 +130,42 @@ export const currencySchema = z.enum(SUPPORTED_CURRENCY_CODES, {
 const goalAmountInputSchema = z.preprocess(blankToNull, z.string().max(20).nullable());
 
 /** Step 1 — About you. */
-export const aboutStepSchema = z.object({
+const aboutStepShape = z.object({
   displayName: displayNameSchema,
   occupation: occupationSchema,
+  customOccupation: customOccupationSchema,
   country: countrySchema,
 });
+export const aboutStepSchema = aboutStepShape.superRefine(requireOtherDescriptions);
 
 /** Step 2 — Your financial activities. */
-export const activitiesStepSchema = z.object({
+const activitiesStepShape = z.object({
   financialActivities: activitiesSchema,
+  customActivity: customActivitySchema,
   paymentExperience: paymentExperienceSchema,
 });
+export const activitiesStepSchema = activitiesStepShape.superRefine(requireOtherDescriptions);
 
 /** Step 3 — Your financial goals. */
-export const goalsStepSchema = z.object({
+const goalsStepShape = z.object({
   incomeBracket: incomeBracketSchema,
   financialGoal: financialGoalSchema,
   customGoal: customGoalSchema,
   goalAmount: goalAmountInputSchema,
   preferredCurrency: currencySchema,
 });
+export const goalsStepSchema = goalsStepShape.superRefine(requireOtherDescriptions);
 
 /**
  * Full profile (PUT /api/profile): finishing onboarding and edits on My Profile. Converts the goal amount into
  * integer minor units of the chosen currency without floating-point math (R38).
  */
-export const profileInputSchema = aboutStepSchema
-  .extend(activitiesStepSchema.shape)
-  .extend(goalsStepSchema.shape)
+export const profileInputSchema = aboutStepShape
+  .extend(activitiesStepShape.shape)
+  .extend(goalsStepShape.shape)
   .extend({ ageBracket: ageBracketSchema.optional() })
   .strict()
+  .superRefine(requireOtherDescriptions)
   .transform((v, ctx) => {
     let goalAmountMinor: number | null = null;
     if (v.goalAmount !== null) {
@@ -118,8 +187,11 @@ export const profileInputSchema = aboutStepSchema
       displayName: v.displayName,
       ageBracket: v.ageBracket,
       occupation: v.occupation,
+      // A description is only kept while its "Other" option is selected.
+      customOccupation: v.occupation === "other" ? v.customOccupation : null,
       country: v.country,
       financialActivities: v.financialActivities,
+      customActivity: v.financialActivities.includes("other") ? v.customActivity : null,
       paymentExperience: v.paymentExperience,
       incomeBracket: v.incomeBracket,
       financialGoal: v.financialGoal,
@@ -134,7 +206,18 @@ export type ProfileInput = z.output<typeof profileInputSchema>;
  * Partial save while onboarding is in progress (PATCH /api/profile): steps 1–2 are saved as the user moves on, so a
  * refresh or a later sign-in resumes where they left off. Step 3 finishes through the full PUT.
  */
-export const profileDraftSchema = aboutStepSchema.extend(activitiesStepSchema.shape).partial().strict();
+export const profileDraftSchema = aboutStepShape
+  .extend(activitiesStepShape.shape)
+  .partial()
+  .strict()
+  .superRefine(requireOtherDescriptions)
+  .transform((v) => ({
+    ...v,
+    ...(v.occupation !== undefined && v.occupation !== "other" ? { customOccupation: null } : {}),
+    ...(v.financialActivities !== undefined && !v.financialActivities.includes("other")
+      ? { customActivity: null }
+      : {}),
+  }));
 export type ProfileDraft = z.output<typeof profileDraftSchema>;
 
 /** Profile as returned to the browser (camelCase, no internal ids). */
@@ -142,8 +225,12 @@ export interface Profile {
   displayName: string;
   ageBracket: AgeBracket | null;
   occupation: Occupation | null;
+  /** Description when occupation is "other" (Step 8). */
+  customOccupation: string | null;
   country: string | null;
   financialActivities: FinancialActivity[];
+  /** Description when financial activities include "other" (Step 8). */
+  customActivity: string | null;
   paymentExperience: PaymentExperience | null;
   incomeBracket: IncomeBracket | null;
   incomeBracketLabel: string | null;

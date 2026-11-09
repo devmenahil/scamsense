@@ -9,7 +9,7 @@ import type { ScenarioRenderInput } from "../schema";
  */
 export const render: ScenarioRenderInput = {
   scenarioKey: "m2-s2",
-  contentVersion: "2026-11-10.step6",
+  contentVersion: "2026-11-12.step8",
   interfaceType: "marketplace",
   introLine: "You've found a laptop that fits your budget.",
   startAppId: "store",
@@ -18,7 +18,8 @@ export const render: ScenarioRenderInput = {
       name: "laptopUse",
       default: "study and everyday work",
       maxLength: 40,
-      purpose: "What the player would use the laptop for (from their goal/occupation).",
+      purpose:
+        "What the player would use the laptop for, from their goal and occupation (e.g. 'design coursework', 'client video edits', 'running my online shop'). Lower case, no brand names.",
     },
   ],
   amountParts: { pro: 13_600, slim: 11_400, wide: 9_700, audio: 2_300 },

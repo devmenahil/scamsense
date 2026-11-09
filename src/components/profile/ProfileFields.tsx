@@ -3,7 +3,9 @@
 import { COUNTRY_OPTIONS } from "@/content/countries";
 import {
   AGE_BRACKETS,
+  CUSTOM_ACTIVITY_MAX,
   CUSTOM_GOAL_MAX,
+  CUSTOM_OCCUPATION_MAX,
   DISPLAY_NAME_MAX,
   FINANCIAL_ACTIVITIES,
   FINANCIAL_GOALS,
@@ -23,8 +25,10 @@ export interface ProfileFormValues {
   displayName: string;
   ageBracket: string;
   occupation: string;
+  customOccupation: string;
   country: string;
   financialActivities: string[];
+  customActivity: string;
   paymentExperience: string;
   incomeBracket: string;
   financialGoal: string;
@@ -41,8 +45,10 @@ export function valuesFromProfile(p: Profile): ProfileFormValues {
     displayName: p.displayName,
     ageBracket: p.ageBracket ?? "",
     occupation: p.occupation ?? "",
+    customOccupation: p.customOccupation ?? "",
     country: p.country ?? "",
     financialActivities: [...p.financialActivities],
+    customActivity: p.customActivity ?? "",
     paymentExperience: p.paymentExperience ?? "",
     incomeBracket: p.incomeBracket ?? "",
     financialGoal: p.financialGoal ?? "",
@@ -59,6 +65,14 @@ interface GroupProps {
 }
 
 const SKIP = { value: "", label: "Prefer not to say" };
+
+function CharCount({ value, max }: { value: string; max: number }) {
+  return (
+    <p className="text-right text-caption text-teal/80" aria-live="polite">
+      {value.length} / {max}
+    </p>
+  );
+}
 
 export function AboutFields({
   values,
@@ -88,6 +102,18 @@ export function AboutFields({
         onChange={(e) => set("occupation", e.target.value)}
         error={errors.occupation}
       />
+      {values.occupation === "other" && (
+        <Input
+          label="Describe your occupation or life stage"
+          name="customOccupation"
+          hint="A short phrase is enough, like “Digital artist” or “Caring for family”."
+          value={values.customOccupation}
+          onChange={(e) => set("customOccupation", e.target.value)}
+          maxLength={CUSTOM_OCCUPATION_MAX}
+          error={errors.customOccupation}
+          footer={<CharCount value={values.customOccupation} max={CUSTOM_OCCUPATION_MAX} />}
+        />
+      )}
       <Select
         label="Country of residence"
         name="country"
@@ -146,6 +172,18 @@ export function ActivitiesFields({ values, errors, set }: GroupProps) {
           </div>
         )}
       </fieldset>
+      {values.financialActivities.includes("other") && (
+        <Input
+          label="Describe your other financial activity"
+          name="customActivity"
+          hint="For example: “I sell digital art commissions through social media.”"
+          value={values.customActivity}
+          onChange={(e) => set("customActivity", e.target.value)}
+          maxLength={CUSTOM_ACTIVITY_MAX}
+          error={errors.customActivity}
+          footer={<CharCount value={values.customActivity} max={CUSTOM_ACTIVITY_MAX} />}
+        />
+      )}
       <Select
         label="Digital payment experience"
         name="paymentExperience"
@@ -177,16 +215,12 @@ export function GoalsFields({ values, errors, set }: GroupProps) {
       <Input
         label={values.financialGoal === "other" ? "Describe your goal" : "Anything to add about your goal?"}
         name="customGoal"
-        optional
+        optional={values.financialGoal !== "other"}
         value={values.customGoal}
         onChange={(e) => set("customGoal", e.target.value)}
         maxLength={CUSTOM_GOAL_MAX}
         error={errors.customGoal}
-        footer={
-          <p className="text-right text-caption text-teal/80" aria-live="polite">
-            {values.customGoal.length} / {CUSTOM_GOAL_MAX}
-          </p>
-        }
+        footer={<CharCount value={values.customGoal} max={CUSTOM_GOAL_MAX} />}
       />
       <Select
         label="Preferred currency"

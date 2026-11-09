@@ -52,7 +52,7 @@ export function StartScenarioButton({
         variant={variant}
         onClick={go}
         loading={busy}
-        loadingText="Opening…"
+        loadingText={action === "start" ? "Preparing your scenario…" : "Opening…"}
         iconRight={<Icon name={action.startsWith("resume") ? "arrow-right" : "play"} className="size-5" />}
       >
         {LABELS[action]}

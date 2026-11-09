@@ -1,6 +1,8 @@
 import "server-only";
 import { ApiError, dbError } from "@/lib/api/server";
+import type { ModuleKey } from "@/content/modules";
 import { buildProgressSnapshot, type ProgressSnapshot } from "@/lib/domain/progress";
+import { ensureModuleOrder } from "@/lib/routing/server";
 import { assertModuleUnlocked, ProgressionError } from "@/lib/domain/progression";
 import { calculateStartingFunds } from "@/lib/domain/trainingFunds";
 import type { Profile } from "@/lib/profile/schema";
@@ -31,7 +33,7 @@ export async function loadProgressSnapshot(
   userId: string,
   profile: Pick<Profile, "incomeBracket" | "preferredCurrency">,
 ): Promise<ProgressSnapshot> {
-  const [runs, attempts, ledger, scores] = await Promise.all([
+  const [runs, attempts, ledger, scores, orders] = await Promise.all([
     supabase.from("module_runs").select(RUN_COLUMNS).eq("user_id", userId).returns<RunRow[]>(),
     supabase.from("scenario_attempts").select(ATTEMPT_COLUMNS).eq("user_id", userId).returns<AttemptRow[]>(),
     supabase
@@ -41,9 +43,34 @@ export async function loadProgressSnapshot(
       .order("id", { ascending: true })
       .returns<LedgerRow[]>(),
     supabase.from("scenario_scores").select(SCORE_COLUMNS).eq("user_id", userId).returns<ScoreRow[]>(),
+    supabase
+      .from("module_scenario_orders")
+      .select("module_key, scenario_order")
+      .eq("user_id", userId)
+      .returns<{ module_key: string; scenario_order: string[] }[]>(),
   ]);
   for (const r of [runs, attempts, ledger, scores]) if (r.error) throw dbError(r.error, "Your progress");
+  // Routed order (Step 8). If the table is unavailable the authored order is used: ordering never blocks play.
+  const scenarioOrders: Record<string, string[]> = {};
+  if (!orders.error) for (const o of orders.data ?? []) scenarioOrders[o.module_key] = o.scenario_order;
+  // Modules started before Step 8 (or whose order failed to save) get their order once, deterministically,
+  // without calling Gemini (only an already-cached interpretation can contribute).
+  if (!orders.error) {
+    for (const row of runs.data ?? []) {
+      const run = rowToRun(row);
+      const key = run.moduleKey;
+      if (scenarioOrders[key]) continue;
+      // A module started moments ago is being routed by its start request (which may use Gemini): don't race it.
+      if (Date.now() - Date.parse(run.startedAt) < 60_000) continue;
+      const made = await ensureModuleOrder(supabase, userId, key as ModuleKey, {
+        allowGemini: false,
+        legacy: true,
+      });
+      if (made) scenarioOrders[key] = made.order;
+    }
+  }
   return buildProgressSnapshot({
+    scenarioOrders,
     runs: (runs.data ?? []).map(rowToRun),
     attempts: (attempts.data ?? []).map(rowToAttempt),
     ledger: (ledger.data ?? []).map(rowToLedgerEntry),

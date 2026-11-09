@@ -44,7 +44,10 @@ export const OCCUPATIONS = [
 export const OCCUPATION_VALUES = values(OCCUPATIONS);
 export type Occupation = (typeof OCCUPATIONS)[number]["value"];
 
-/** Primary input for the future scenario-routing engine (Step 8). */
+/**
+ * Primary input for scenario routing (Step 8). "other" carries no routing tags of its own: its description is
+ * interpreted (exact label match first, otherwise Gemini) into approved tags by src/lib/routing.
+ */
 export const FINANCIAL_ACTIVITIES = [
   { value: "online_shopping", label: "Online shopping" },
   { value: "online_selling", label: "Online selling" },
@@ -56,6 +59,7 @@ export const FINANCIAL_ACTIVITIES = [
   { value: "subscription_payments", label: "Subscription payments" },
   { value: "investments", label: "Investments" },
   { value: "digital_wallet_usage", label: "General digital wallet usage" },
+  { value: "other", label: "Other" },
 ] as const satisfies readonly Option[];
 export const FINANCIAL_ACTIVITY_VALUES = values(FINANCIAL_ACTIVITIES);
 export type FinancialActivity = (typeof FINANCIAL_ACTIVITIES)[number]["value"];
@@ -98,5 +102,10 @@ export type IncomeBracket = (typeof INCOME_BRACKETS)[number]["value"];
 
 export const DISPLAY_NAME_MAX = 60;
 export const CUSTOM_GOAL_MAX = 120;
+/** "Other" descriptions (Step 8). Required only when the matching "Other" option is selected. */
+export const CUSTOM_OCCUPATION_MAX = 80;
+export const CUSTOM_ACTIVITY_MAX = 160;
+/** Minimum length of a required "Other" description (enough for a short phrase like "Nurse"). */
+export const CUSTOM_TEXT_MIN = 3;
 /** Upper bound for the optional goal amount, in major units (sanity limit, not a financial judgment). */
 export const GOAL_AMOUNT_MAX_MAJOR = 10_000_000;

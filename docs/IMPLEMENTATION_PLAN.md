@@ -201,11 +201,50 @@ templates. No Gemini and no PayPal API calls were added.
 - No webhooks: capture is synchronous and `sync` reconciles. A capture left PENDING at PayPal is re-checked when the
   player presses "Check again" or reloads.
 
-## Phase 6 — Gemini integration with fallbacks
-- [ ] `gemini.ts` client with timeout/retry, Zod output parsing, versioned prompts
-- [ ] Scenario personalization (slots) with authored defaults
-- [ ] Reasoning evaluation (evidence IDs, feedback, separate humor) + correctness guard + fallback evaluator
-- [ ] Tests that simulate Gemini down or returning invalid output → app fully usable
+## Phase 6 — Hybrid routing, Gemini personalization and evaluation (Step 8) ✅ — verified 2026-11-12, awaiting owner review
+- [x] Inspected the "Other" options: occupation Other ✓ and goal Other ✓ existed; custom goal text existed but was
+      optional; no occupation description, no "Other" activity, no activity description. Added all three (onboarding
+      steps 1–2, My Profile), required only when "Other" is chosen, sanitized, length-limited
+- [x] Migration `20261112090000_hybrid_intelligence.sql` (profile columns + trigger, 5 new tables, 6 `service_role`
+      functions, RLS read-own) — applied by the owner on 2026-11-12
+- [x] Gemini client `src/lib/ai/gemini.ts` (official `@google/genai` 3.0.0): structured JSON, Zod re-validation,
+      deadlines, ≤2 jittered retries honouring retryDelay, invalid-output retry, rate limiter, usage monitor
+      (`src/lib/ai/usage.ts`, `GET /api/dev/gemini-usage` in development). Model verified: `gemini-3.5-flash-lite`
+      (free tier, structured outputs)
+- [x] Deterministic routing `src/lib/domain/routing.ts` (0.50·A + 0.20·C + 0.15·E + 0.15·D, E = 0.5, D = 1, ties by
+      key), predefined/exact/vague resolution, Gemini custom-input classifier with validation and fingerprint cache,
+      write-once order per (user, module) at module start; legacy started modules initialized without Gemini
+- [x] Narrative slots for all six scenarios; personalization per new scenario, persisted, linked before play, reused by
+      refresh/resume/replays, tracked fallback
+- [x] (Owner decision 13, 2026-11-13) Gemini-personalized neutral intros restored in the same request, with
+      scenario-specific facts, hints, and accuracy/spoiler validation (`src/lib/personalization/intro.ts`), stored in
+      `intro_line` (migration `20261113090000_personalization_intro.sql`, **to be applied by the owner**); focused live
+      check `tests/gemini/intro.live.test.ts`: 6/6 accurate, personalized intros accepted on the final configuration
+- [x] ONE evaluation request per finalized attempt (evidence, assumptions, missed evidence, feedback, advice, takeaway,
+      separate humor); ID whitelisting, correctness guard, policy/statistics/points/link/mocking guards; backend
+      scoring; atomic completion via `record_attempt_evaluation`; retry or labelled basic feedback after a failure
+- [x] Player "Reviewing your reasoning…" panel; real results page (`/play/[id]/results`); module page "Ordered for you"
+- [x] Tests: 282 unit tests (routing formula + profiles A–F, tag planning, classifier validation, Gemini client
+      retries/backoff/limits, personalization of all six scenarios for two profiles with ground-truth invariants,
+      evaluation validation/scoring/fallback, measured request counts with an in-memory DB, profile "Other" rules,
+      migration drift/RLS); live Gemini suite `npm run test:gemini` passed twice (20 + 23 requests, 0 invalid outputs);
+      existing live integration suites 59/59 pass against the Step 8 build; new Step 8 integration suite (5 tests)
+      skips until the migration is applied; pre-migration API journey 27/27; production build; client-bundle leak scan
+- [x] After the migration: Step 8 integration suite 5/5 (one test's expected total corrected from 75 to 70 =
+      40+15+5+10); live end-to-end check 21/21 against the production build with real Gemini: custom "Other" profile →
+      1 classification (cached; a repeat start made none) → routed order saved (`custom_gemini`) → M1-S1 personalized by
+      Gemini (one instance; refresh reused it) → actions, decision, explanation → one evaluation
+      (`correct_strong_reasoning`) → official score 84/100 (40/17/17/10) → COMPLETED; repeat POST returned the stored
+      result; results page and progress updated. No PayPal payment was involved
+
+**Phase 6 notes / limitations**
+- Free-tier RPM/RPD values are only visible in AI Studio (not on the public docs pages); `GEMINI_MAX_RPM` defaults to 12.
+- The rate limiter and usage monitor are in-process (per server instance), which is enough for the hackathon MVP.
+- Live checks show the model's evidence recognition is reasonable but not deterministic; scoring stays reproducible
+  because points are computed from the stored, validated IDs.
+- No browser-automation tool was available in this session: the UI was verified through the production build, page
+  responses, and the API journey, not by clicking through in a real browser.
+- Reveal the Red Flags and the Recovery Playbook screens remain Step 9 (results show links/"coming soon").
 
 ## Phase 7 — Results and Reveal the Red Flags
 - [ ] `/play/[attemptId]/results` gated on COMPLETED

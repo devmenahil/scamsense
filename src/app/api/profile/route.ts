@@ -2,6 +2,8 @@ import { ApiError, dbError, errorResponse, json, parseBody, requireApiUser } fro
 import {
   draftToRow,
   inputToRow,
+  isMissingColumnError,
+  LEGACY_PROFILE_COLUMNS,
   PROFILE_COLUMNS,
   rowToProfile,
   type ProfileRow,
@@ -20,11 +22,10 @@ import { profileDraftSchema, profileInputSchema } from "@/lib/profile/schema";
 export async function GET() {
   try {
     const { supabase, user } = await requireApiUser();
-    const { data, error } = await supabase
-      .from("profiles")
-      .select(PROFILE_COLUMNS)
-      .eq("user_id", user.id)
-      .maybeSingle<ProfileRow>();
+    const read = (columns: string) =>
+      supabase.from("profiles").select(columns).eq("user_id", user.id).maybeSingle<ProfileRow>();
+    let { data, error } = await read(PROFILE_COLUMNS);
+    if (isMissingColumnError(error)) ({ data, error } = await read(LEGACY_PROFILE_COLUMNS));
     if (error) throw dbError(error);
     if (!data)
       throw new ApiError(404, "not_found", "We couldn't find your profile. Please sign out and back in.");
@@ -62,12 +63,24 @@ async function update(
   row: Record<string, unknown>,
 ) {
   if (Object.keys(row).length === 0) throw new ApiError(400, "validation", "There's nothing to save.");
-  const { data, error } = await supabase
-    .from("profiles")
-    .update(row)
-    .eq("user_id", userId)
-    .select(PROFILE_COLUMNS)
-    .maybeSingle<ProfileRow>();
+  const write = (values: Record<string, unknown>, columns: string) =>
+    supabase.from("profiles").update(values).eq("user_id", userId).select(columns).maybeSingle<ProfileRow>();
+  let { data, error } = await write(row, PROFILE_COLUMNS);
+  if (isMissingColumnError(error)) {
+    // The Step 8 migration isn't applied yet: save everything else, but never silently drop a description.
+    const { custom_occupation, custom_activity, ...legacy } = row;
+    if (
+      custom_occupation ||
+      custom_activity ||
+      (row.financial_activities as string[] | undefined)?.includes("other")
+    )
+      throw new ApiError(
+        503,
+        "service_unavailable",
+        "Custom descriptions can't be saved yet. Please choose a listed option for now, or try again later.",
+      );
+    ({ data, error } = await write(legacy, LEGACY_PROFILE_COLUMNS));
+  }
   if (error) throw dbError(error);
   if (!data)
     throw new ApiError(404, "not_found", "We couldn't find your profile. Please sign out and back in.");

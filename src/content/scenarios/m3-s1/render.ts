@@ -1,4 +1,5 @@
 import type { ScenarioRenderInput } from "../schema";
+import { everydayEmailSlots } from "../slots";
 
 /**
  * M3-S1 — The Job Opportunity (chat and email simulator with a browser for independent checks). Client-safe (R10).
@@ -7,7 +8,7 @@ import type { ScenarioRenderInput } from "../schema";
  */
 export const render: ScenarioRenderInput = {
   scenarioKey: "m3-s1",
-  contentVersion: "2026-11-10.step6",
+  contentVersion: "2026-11-12.step8",
   interfaceType: "chat_email",
   introLine: "You've received an update about a job opportunity.",
   startAppId: "mail",
@@ -16,8 +17,16 @@ export const render: ScenarioRenderInput = {
       name: "jobTitle",
       default: "Remote Operations Coordinator",
       maxLength: 48,
-      purpose: "The offered role, matched to the player's occupation or goal.",
+      purpose:
+        "The offered remote role, matched to the player's occupation, skills, or goal (an operations or support-style job title, no company name).",
     },
+    ...everydayEmailSlots({
+      senderName: "Harbor City Transit",
+      domain: "harborcitytransit",
+      subject: "Weekend service changes",
+      preview: "Line 4 runs every 20 minutes this weekend…",
+      body: "Line 4 runs every 20 minutes this weekend while track work is completed.",
+    }),
   ],
   amountParts: { salary: 110_000 },
   checkout: { payee: "ProEquip Onboarding Services", description: "Remote equipment deposit MRD-ONB-5521" },
@@ -98,16 +107,14 @@ export const render: ScenarioRenderInput = {
         },
         {
           id: "newsletter",
-          from: { name: "Harbor City Transit", address: "news@harborcitytransit.example" },
+          from: { name: "{{otherSenderName}}", address: "hello@{{otherDomain}}.example" },
           fromAnchor: "newsletter_sender",
           to: "me@inkwell-mail.example",
-          subject: "Weekend service changes",
+          subject: "{{otherSubject}}",
           listDate: "Oct 25",
           fullDate: "Oct 25, 9:00 AM",
-          preview: "Line 4 runs every 20 minutes this weekend…",
-          body: [
-            { type: "p", text: "Line 4 runs every 20 minutes this weekend while track work is completed." },
-          ],
+          preview: "{{otherPreview}}",
+          body: [{ type: "p", text: "{{otherBody}}" }],
         },
       ],
     },

@@ -10,7 +10,7 @@ It uses PayPal **Sandbox** only. No real money ever moves.
 - Specification: [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) · Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
   · Data model: [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) · Build plan: [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
 
-## Current status: Phase 5 / Step 7 (genuine PayPal Sandbox checkout)
+## Current status: Phase 6 / Step 8 (hybrid routing, Gemini personalization, Gemini reasoning evaluation)
 
 What works today:
 
@@ -25,11 +25,14 @@ What works today:
 - **Genuine PayPal Sandbox checkout (Step 7):** pay decisions open the official PayPal JavaScript SDK v6 (Sandbox) for
   the server-computed amount; the server creates the Orders v2 order, captures it, verifies the capture, and only
   then records it. See [PayPal Sandbox checkout](#paypal-sandbox-checkout).
+- **Hybrid intelligence (Step 8):** "Other" options with short descriptions for occupation, financial activities, and
+  goal; deterministic scenario routing (0.50·A + 0.20·C + 0.15·E + 0.15·D) with Gemini interpreting only meaningful
+  custom descriptions (validated, cached); Gemini personalization of every newly played scenario (all six), stored
+  and reused; ONE Gemini evaluation per finished attempt (evidence recognition, feedback, advice, and a separate witty
+  comment) with backend scoring; results page. See [Gemini (Step 8)](#gemini-step-8).
 
-Not built yet (by design): Gemini feedback and personalization (Step 8), results / Reveal the Red Flags, badge and
-certificate records, Zapier email, PDF reports, verified Recovery Playbook content, Sensei Kenshi. Until Step 8, a
-finished scenario stops at "Your decision is ready for evaluation", so Module 2 can only be unlocked by the
-integration tests or a prepared test account.
+Not built yet (by design): Reveal the Red Flags walkthrough, verified Recovery Playbook content (Step 9), badge and
+certificate records, Zapier email, PDF reports, Sensei Kenshi.
 
 | Page                                            | Route                                                 |
 | ----------------------------------------------- | ----------------------------------------------------- |
@@ -38,7 +41,8 @@ integration tests or a prepared test account.
 | Onboarding                                      | `/onboarding`                                         |
 | Dashboard · Modules · Certificates · My Profile | `/dashboard`, `/modules`, `/certificates`, `/profile` |
 | Scenario player (incl. PayPal Sandbox checkout) | `/play/[attemptId]`                                   |
-| Results, Sensei Kenshi (design shells)          | `/play/demo/results`, `/sensei`                       |
+| Scenario results (completed attempts)           | `/play/[attemptId]/results`                           |
+| Sensei Kenshi (design shell)                    | `/sensei`                                             |
 | Your Recovery Playbook                          | `/playbook`                                           |
 
 ## Getting started
@@ -80,6 +84,15 @@ gameplay writes.
    - `20261111090000_paypal_checkout.sql` (Step 7): `payment_transactions` (PayPal Sandbox orders and captures), the
      `service_role`-only functions `record_payment_order`, `record_payment_capture`, `update_payment_order`, and the
      updated `complete_scenario_attempt` (classifies a captured payment at completion).
+   - `20261113090000_personalization_intro.sql` (Step 8 follow-up): `scenario_personalizations.intro_line` for
+     Gemini-personalized neutral intros, and `complete_scenario_personalization` with `p_intro_line`. Until it is
+     applied, scenarios keep their personalized details but show the authored intro.
+   - `20261112090000_hybrid_intelligence.sql` (Step 8): profile "Other" descriptions, `profile_interpretations`
+     (validated classification cache), `module_scenario_orders` (write-once routed order),
+     `scenario_personalizations` + `attempt_personalizations`, `attempt_evaluations`, and the `service_role`-only
+     functions `claim_scenario_personalization`, `complete_scenario_personalization`, `link_attempt_personalization`,
+     `claim_attempt_evaluation`, `fail_attempt_evaluation`, `record_attempt_evaluation`. Until it is applied the app
+     keeps working with authored defaults, but custom descriptions can't be saved and scenarios can't be evaluated.
 4. **Auth URLs.** Authentication → URL Configuration: Site URL `http://localhost:3000` (your deployed URL in
    production) and add `http://localhost:3000/auth/confirm` to Redirect URLs, so confirmation and reset links work.
 5. **Email confirmation.** Authentication → Sign In / Providers → Email → "Confirm email".
@@ -156,6 +169,32 @@ buyer:
 5. Optional checks: refresh while the PayPal window is open (the same order is reused); close the window (cancelled,
    no deduction); replay the scenario once it is completed (a new Sandbox payment; official funds unchanged).
 
+## Gemini (Step 8)
+
+Set `GEMINI_API_KEY` and `GEMINI_MODEL` in `.env.local` (server only; never `NEXT_PUBLIC_`). Verified on 2026-11-12
+with `gemini-3.5-flash-lite` (free tier, structured JSON output). Optional: `GEMINI_TIMEOUT_MS` (per request,
+1000–30000) and `GEMINI_MAX_RPM` (global requests per minute, default 12; set it to your project's limit shown in
+AI Studio → Rate limits).
+
+When Gemini is called — and when it isn't:
+
+| Moment                                                                   | Gemini requests                                                               |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Routing a predefined-only profile                                        | 0                                                                             |
+| Routing a profile with a meaningful custom "Other" description           | 1 per new description version (cached by fingerprint; reused by every module) |
+| Vague descriptions ("something else"), exact label matches, custom goals | 0                                                                             |
+| First play of each scenario (all six)                                    | 1 personalization                                                             |
+| Refresh, resume, opening apps/emails/invoices, replays                   | 0 (stored narrative reused)                                                   |
+| Finishing an attempt (original or replay)                                | 1 evaluation (feedback + witty comment together)                              |
+| Viewing results again                                                    | 0                                                                             |
+
+So a predefined profile uses about **12 requests** for the six scenarios. Usage counters (requests, retries, cache
+hits, tokens, errors, rate-limit and fallback events) are at `GET /api/dev/gemini-usage` in development only.
+
+If Gemini is unavailable: routing uses predefined tags (neutral context for custom text), scenarios use the authored
+story details (stored as a tracked fallback), and evaluation offers "Try again" or clearly labelled basic feedback.
+No points or AI text are ever invented, and evaluation can never trigger a PayPal capture.
+
 ## Scripts
 
 | Command                       | Purpose                                                                                                                                                                                                                                                                                                                               |
@@ -166,6 +205,7 @@ buyer:
 | `npm run typecheck`           | TypeScript (`strict`)                                                                                                                                                                                                                                                                                                                 |
 | `npm test`                    | Vitest unit tests (env guard, currency + money, training budget, wallet ledger, progression/unlocks/replays, scoring, profile/auth validation, route rules, migration ↔ code consistency, navigation)                                                                                                                                 |
 | `npm run test:integration`    | **Live** tests against your Supabase project and a running app (`APP_URL`, default `http://localhost:3000`). Creates fictional `@example.com` accounts. Needs "Confirm email" off, every migration, and `SUPABASE_SERVICE_ROLE_KEY`; the PayPal suite also creates real (unapproved) Sandbox orders and needs the Sandbox credentials |
+| `npm run test:gemini`         | **Live** Gemini check (~20 requests, spaced for free-tier limits): real classification, personalization of all six scenarios for two profiles, and evaluation of sample explanations, through the same validators the server uses. Set `GEMINI_LIVE_REPORT=<path>` to save examples and measured usage as JSON                        |
 | `npm run format`              | Prettier (with Tailwind class sorting)                                                                                                                                                                                                                                                                                                |
 
 ## Project layout

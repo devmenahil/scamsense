@@ -24,6 +24,11 @@ import { getTrustedWriter, TrustedWriterNotConfiguredError } from "@/lib/supabas
 import type { SupabaseServerClient } from "@/lib/supabase/server";
 import { isPayPalConfigured } from "@/lib/payments/config";
 import {
+  ensureAttemptPersonalization,
+  loadAttemptPersonalization,
+  type AttemptPersonalization,
+} from "@/lib/personalization/server";
+import {
   buildClientView,
   type AttemptData,
   type AttemptEventData,
@@ -53,6 +58,8 @@ export interface LoadedAttempt {
   run: { currency: string; startingFundsMinor: number };
   /** The attempt's PayPal Sandbox orders (Step 7), oldest first. */
   payments: AttemptPaymentData[];
+  /** Stored narrative personalization (Step 8); null = authored defaults. */
+  personalization: AttemptPersonalization | null;
 }
 
 const PAYMENT_SELECT =
@@ -165,7 +172,7 @@ export async function loadAttempt(
   attemptId: string,
 ): Promise<LoadedAttempt> {
   if (!UUID.test(attemptId)) throw new ApiError(404, "not_found", "We couldn't find that scenario attempt.");
-  const [attempt, events, payments] = await Promise.all([
+  const [attempt, events, payments, personalization] = await Promise.all([
     supabase
       .from("scenario_attempts")
       .select(`${ATTEMPT_SELECT}, module_runs!scenario_attempts_run_fk(currency, starting_funds_minor)`)
@@ -188,6 +195,7 @@ export async function loadAttempt(
       .eq("user_id", userId)
       .order("checkout_sequence", { ascending: true })
       .returns<PaymentRow[]>(),
+    loadAttemptPersonalization(supabase, userId, attemptId),
   ]);
   if (attempt.error) throw dbError(attempt.error, "Scenarios");
   if (events.error) throw dbError(events.error, "Scenarios");
@@ -202,6 +210,7 @@ export async function loadAttempt(
     events: (events.data ?? []).map((e) => ({ eventType: e.event_type, actionId: e.action_id })),
     run: { currency: row.module_runs.currency, startingFundsMinor: funds },
     payments: (payments.data ?? []).map(toPaymentData),
+    personalization,
   };
 }
 
@@ -231,7 +240,11 @@ export async function startScenarioAttempt(
     }
     throw e;
   }
-  if (plan.kind === "resume") return { attemptId: plan.attemptId, kind: "resume" };
+  if (plan.kind === "resume") {
+    // An attempt still on its intro screen may not have its narrative yet (e.g. a lost response): prepare it now.
+    await preparePersonalization(supabase, userId, plan.attemptId);
+    return { attemptId: plan.attemptId, kind: "resume" };
+  }
 
   const { data, error } = await writer().rpc("create_scenario_attempt", {
     p_user_id: userId,
@@ -242,7 +255,31 @@ export async function startScenarioAttempt(
   const row = data as { id: string; attempt_number: number } | null;
   if (!row?.id)
     throw new ApiError(503, "service_unavailable", "We couldn't start the scenario. Please try again.");
+  // Step 8: one Gemini personalization for a newly played scenario (replays reuse the stored one). Never blocks play:
+  // on any failure the attempt shows the authored defaults.
+  await preparePersonalization(supabase, userId, row.id);
   return { attemptId: row.id, kind: row.attempt_number > 1 ? "replay" : "new" };
+}
+
+/** Links (or generates) the narrative of an attempt that is still on its intro screen. Never throws. */
+export async function preparePersonalization(
+  supabase: SupabaseServerClient,
+  userId: string,
+  attemptId: string,
+): Promise<void> {
+  try {
+    const loaded = await loadAttempt(supabase, userId, attemptId);
+    if (loaded.personalization || loaded.attempt.state !== "INTRO") return;
+    await ensureAttemptPersonalization(supabase, userId, {
+      id: attemptId,
+      scenarioKey: loaded.attempt.scenarioKey,
+      state: loaded.attempt.state,
+      startingFundsMinor: loaded.run.startingFundsMinor,
+      currency: loaded.run.currency,
+    });
+  } catch (e) {
+    console.error("[scenario] personalization skipped", { name: e instanceof Error ? e.name : typeof e });
+  }
 }
 
 /**

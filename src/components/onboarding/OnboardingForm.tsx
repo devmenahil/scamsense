@@ -64,14 +64,25 @@ export function OnboardingForm({ initialProfile }: { initialProfile: Profile }) 
     const schema = step === 0 ? aboutStepSchema : step === 1 ? activitiesStepSchema : profileInputSchema;
     const payload =
       step === 0
-        ? { displayName: values.displayName, occupation: values.occupation, country: values.country }
+        ? {
+            displayName: values.displayName,
+            occupation: values.occupation,
+            customOccupation: values.customOccupation,
+            country: values.country,
+          }
         : step === 1
-          ? { financialActivities: values.financialActivities, paymentExperience: values.paymentExperience }
+          ? {
+              financialActivities: values.financialActivities,
+              customActivity: values.customActivity,
+              paymentExperience: values.paymentExperience,
+            }
           : {
               displayName: values.displayName,
               occupation: values.occupation,
+              customOccupation: values.customOccupation,
               country: values.country,
               financialActivities: values.financialActivities,
+              customActivity: values.customActivity,
               paymentExperience: values.paymentExperience,
               incomeBracket: values.incomeBracket,
               financialGoal: values.financialGoal,

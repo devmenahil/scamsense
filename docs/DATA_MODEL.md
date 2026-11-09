@@ -1,6 +1,7 @@
 # ScamSense — Data Model
 
-Status: Phase 5 (Step 7). Supabase PostgreSQL. Implemented: `profiles`
+Status: Phase 6 (Step 8). Step 8 adds `20261112090000_hybrid_intelligence.sql` (§3.12–§3.16, §4 items 10–15): profile
+"Other" descriptions, routing cache and order, personalization instances, and evaluations. Supabase PostgreSQL. Implemented: `profiles`
 (`20261109000000_profiles.sql`) and `module_runs`, `scenario_attempts`, `wallet_ledger_entries`, `scenario_scores`
 (`20261109120000_progression_wallet.sql`); currency allowlist narrowed to USD by `20261109140000_usd_only_currency.sql`
 (Step 5 review); Step 6 scenario engine in `20261110090000_scenario_engine.sql` (13 attempt states, event log,
@@ -26,7 +27,10 @@ auth.users 1─* module_runs            (one per module the user has started; ho
 module_runs 1─* scenario_attempts
 module_runs 1─* wallet_ledger_entries
 scenario_attempts 1─0..1 scenario_scores (deterministic 40/30/20/10 score, written at completion)
-scenario_attempts 1─0..1 evaluations  (latest/final; history kept via evaluation rows with is_final flag)
+scenario_attempts 1─0..1 attempt_evaluations (Step 8: one evaluation per attempt; replays have their own)
+scenario_attempts 1─0..1 attempt_personalizations ─* scenario_personalizations (Step 8: narrative shown)
+auth.users 1─* profile_interpretations (Step 8: validated classification cache, keyed by fingerprint)
+auth.users 1─* module_scenario_orders  (Step 8: one write-once routed order per module)
 scenario_attempts 1─* scenario_attempt_events (append-only log of accepted state-machine events)
 scenario_attempts 1─* payment_transactions
 scenario_attempts 1─* wallet_ledger_entries (payment entries reference the attempt)
@@ -54,13 +58,15 @@ passwords live only in `auth.users`.
 | `age_confirmed_at` | timestamptz not null default now() | immutable |
 | `age_bracket` | text null | optional; adult brackets only |
 | `occupation` | text null | fixed ids; required once onboarded |
+| `custom_occupation` | text null | Step 8: 1–80 chars, only while `occupation = 'other'` (trigger clears it otherwise); required by the API when "Other" |
 | `country` | text null | ISO 3166-1 alpha-2 (249 codes); required once onboarded |
-| `financial_activities` | text[] not null default `{}` | ⊆ fixed ids, ≤10, de-duplicated + sorted by trigger; ≥1 once onboarded |
+| `financial_activities` | text[] not null default `{}` | ⊆ fixed ids incl. `other` (Step 8), ≤11, de-duplicated + sorted by trigger; ≥1 once onboarded |
+| `custom_activity` | text null | Step 8: 1–160 chars, only while `other` is selected; required by the API when "Other" |
 | `payment_experience` | text null | `new`,`occasional`,`frequent`; required once onboarded |
 | `income_bracket` | text null | optional fixed ids incl. `prefer_not_to_say` |
 | `income_bracket_label` | text null | **derived by trigger** from the id (display value snapshot); not client-writable |
 | `financial_goal` | text null | fixed ids; required once onboarded |
-| `custom_goal` | text null | ≤120 chars |
+| `custom_goal` | text null | ≤120 chars; required by the API when `financial_goal = 'other'` (Step 8) |
 | `goal_amount_minor` | bigint null | integer minor units of `preferred_currency`, 1…1e9 (R38) |
 | `preferred_currency` | text not null default `'USD'` | check: enabled allowlist, **USD only** until PayPal merchant verification |
 | `onboarding_completed` | boolean not null default false | check: only true when all required fields are present; can't flip back |
@@ -148,21 +154,7 @@ and verification actions per attempt (original and replays assessed independentl
 | `created_at` | timestamptz | |
 
 ### 3.4 `evaluations`
-| Column | Type | Notes |
-|---|---|---|
-| `id` | uuid PK | |
-| `attempt_id` | uuid FK, unique | final evaluation for the attempt |
-| `user_id` | uuid FK | |
-| `source` | text | `gemini` or `fallback` |
-| `model` | text null | Gemini model name used |
-| `prompt_version` | text | |
-| `addressed_evidence_ids` | text[] | validated against the answer key |
-| `reasoning_coverage` | smallint | 0–100, computed deterministically from IDs + weights |
-| `misconceptions` | text[] | ≤3 short items (AI) or empty |
-| `feedback_text` | text not null | AI or authored fallback |
-| `humor_text` | text not null | separate field (R14). Fallback line from a fixed pool |
-| `latency_ms` | int null | |
-| `created_at` | timestamptz | |
+Superseded by `attempt_evaluations` (§3.16, implemented in Step 8).
 
 ### 3.5 `payment_transactions` (implemented, Step 7: PayPal **Sandbox** orders and captures)
 One row per PayPal Sandbox order created for an attempt: the scored attempt or a replay's own practice attempt.
@@ -241,6 +233,57 @@ The link to the PayPal payment is `payment_transactions.ledger_entry_id` (Step 7
 | `id` bigserial · `user_id` · `action` (`chat`,`cert_email`,`attempt_create`) · `created_at` |
 Limits are checked by counting rows in a time window. Old rows are pruned opportunistically.
 
+### 3.12 `profile_interpretations` (Step 8): validated Gemini interpretations of custom text
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `user_id` | uuid FK auth.users | |
+| `fingerprint` | text (64 hex) | SHA-256 of classifier version + normalized relevant custom text; unique with `user_id`. The raw text is never stored |
+| `classifier_version` | text | old versions are ignored (cache invalidation) |
+| `status` | text | `mapped` / `partial` / `unmapped` |
+| `source` | text = `gemini` | only validated Gemini output is cached; failures are not |
+| `activity_tags`, `context_tags` | text[] | ⊆ approved vocabulary (check), ≤6 / ≤3 |
+| `context_summary` | text null | ≤120 chars neutral summary for narrative personalization |
+| `model`, `input_tokens`, `output_tokens`, `created_at` | | monitoring |
+
+### 3.13 `module_scenario_orders` (Step 8): routed order, write-once
+PK (`user_id`, `module_key`). `scenario_order` text[] must be exactly the module's two scenarios (check);
+`scores` jsonb (A, C, E, D, total in basis points per scenario); `routing_source` (`predefined`, `custom_exact`,
+`custom_gemini`, `custom_neutral`, `custom_fallback`, `legacy_initialization`); `interpretation_fingerprint`;
+`routing_version`. Update trigger raises `scenario_order_immutable`; no delete grant.
+
+### 3.14 `scenario_personalizations` (Step 8): one narrative instance
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | unique with `user_id` |
+| `user_id`, `scenario_key`, `content_version` | | |
+| `status` | text | `pending` (being generated, `claimed_at`) → `ready` |
+| `source` | text null | `gemini` or `fallback` (authored defaults) once ready |
+| `slots` | jsonb object (≤8 KB) | validated slot values only (empty for fallback) |
+| `intro_line` | text null | validated Gemini intro, 15–120 chars, only when `source = 'gemini'` (`20261113090000_personalization_intro.sql`); null → authored intro |
+| `fallback_reason`, `model`, `prompt_version`, `input_tokens`, `output_tokens`, `latency_ms` | | tracking |
+Partial uniques: one `pending` per (user, scenario); one ready `gemini` instance per (user, scenario, content version).
+
+### 3.15 `attempt_personalizations` (Step 8)
+`attempt_id` PK (composite FK → scenario_attempts with user and run) → `personalization_id` (FK with user). Written only
+while the attempt is INTRO, once. Attempts without a row (all pre-Step-8 attempts) show the authored defaults.
+
+### 3.16 `attempt_evaluations` (Step 8): one per attempt (original and each replay)
+| Column | Notes |
+|---|---|
+| `attempt_id` PK, `user_id`, `module_run_id` | composite FK → scenario_attempts |
+| `scenario_key`, `is_practice` | copied from the attempt |
+| `status` | `pending` (claimed) → `complete`, or `failed` (retryable; `failure_count`, `last_failure_reason`) |
+| `source`, `model`, `prompt_version` | `gemini` or `fallback` (basic feedback) |
+| `decision_correct`, `decision_assessment` | deterministic correctness; assessment ∈ 5 values (check) |
+| `recognized_evidence_ids`, `missed_evidence_ids`, `unsupported_assumptions` (≤3) | validated |
+| `reasoning_explanation` (≤1200), `verification_feedback`, `payment_behavior_feedback`, `improvement_advice` (≤600), `educational_takeaway` (≤300), `humorous_comment` (≤220, separate field, R14), `evaluation_confidence` | |
+| `input_tokens`, `output_tokens`, `latency_ms`, `claimed_at`, `completed_at` | |
+Points live only in `scenario_scores` (written by `complete_scenario_attempt`).
+
+RLS on §3.12–3.16: owner SELECT only; no browser writes; the server writes through the functions below (and plain
+inserts for the two insert-only caches).
+
 ## 4. Transactional operations
 Implemented in Phase 3 as `security definer` functions with `search_path = ''`, executable **only by
 `service_role`** (the server's trusted writer, `src/lib/supabase/admin.ts`), which passes the user id from the
@@ -277,6 +320,19 @@ verified session. Errors are SQLSTATE `P0001` with stable messages (`module_lock
    (PAYMENT_CANCELLED / PAYMENT_FAILED event). Repeats are idempotent.
    `complete_scenario_attempt` (replaced in place) also classifies the attempt's CAPTURED payment row.
 9. *(Phase 9)* badge + certificate rows at module completion.
+10. *(Step 8)* `claim_scenario_personalization(user, scenario, content_version)` → `{status: ready|busy|claimed, id}`
+    (advisory lock per user+scenario; a pending claim older than 45s is taken over).
+11. *(Step 8)* `complete_scenario_personalization(user, id, source, slots, fallback_reason, model, prompt_version,
+    tokens…, intro_line default null)` (intro parameter added by `20261113090000_personalization_intro.sql`):
+    tokens…)`: pending → ready, idempotent.
+12. *(Step 8)* `link_attempt_personalization(user, attempt, personalization)`: idempotent; refuses once the attempt
+    has left INTRO (`personalization_too_late`) or for another scenario's instance.
+13. *(Step 8)* `claim_attempt_evaluation(user, attempt)` → `claimed | busy | complete`; requires FINALIZED…RECOVERY_AVAILABLE.
+14. *(Step 8)* `fail_attempt_evaluation(user, attempt, reason)`: pending → failed (retryable).
+15. *(Step 8)* `record_attempt_evaluation(user, attempt, …evaluation fields…, point components, verification ids,
+    scoring_version, payment_classification)`: in ONE transaction stores the evaluation, applies FEEDBACK_READY,
+    REVIEW_READY, RECOVERY_READY through `apply_attempt_event`, and calls `complete_scenario_attempt`; idempotent once
+    complete (a repeat can never overwrite the stored score).
 
 ## 5. Static content types (TypeScript, validated by Zod)
 ```ts

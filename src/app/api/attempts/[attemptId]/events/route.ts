@@ -2,7 +2,7 @@ import { z } from "zod";
 import { errorResponse, json, parseBody, requireApiUser } from "@/lib/api/server";
 import { idSchema } from "@/content/scenarios/schema";
 import { requireOnboardedProgressProfile } from "@/lib/progress/profileForProgress";
-import { applyAttemptEvent, loadAttempt } from "@/lib/scenario/server";
+import { applyAttemptEvent, loadAttempt, preparePersonalization } from "@/lib/scenario/server";
 
 type Context = { params: Promise<{ attemptId: string }> };
 
@@ -28,10 +28,17 @@ export async function POST(request: Request, { params }: Context) {
     const { attemptId } = await params;
     const { supabase, user } = await requireApiUser();
     const event = await parseBody(request, clientEventSchema);
-    const [profile, loaded] = await Promise.all([
+    const [profile, initial] = await Promise.all([
       requireOnboardedProgressProfile(supabase, user.id),
       loadAttempt(supabase, user.id, attemptId),
     ]);
+    let loaded = initial;
+    // Step 8: the environment is first shown at START. If its narrative wasn't prepared when the attempt was created
+    // (e.g. a lost response), prepare it now, once; afterwards the narrative never changes.
+    if (event.type === "START" && loaded.attempt.state === "INTRO" && !loaded.personalization) {
+      await preparePersonalization(supabase, user.id, attemptId);
+      loaded = await loadAttempt(supabase, user.id, attemptId);
+    }
     const attempt = await applyAttemptEvent(user.id, profile.displayName, loaded, event);
     return json({ attempt });
   } catch (e) {

@@ -90,7 +90,13 @@ export function ProfileManager({ initialProfile }: { initialProfile: Profile }) 
   const currency = isSupportedCurrency(profile.preferredCurrency) ? profile.preferredCurrency : "USD";
   const rows: { label: string; value: string }[] = [
     { label: "Display name", value: profile.displayName },
-    { label: "Occupation or life stage", value: labelFor(OCCUPATIONS, profile.occupation) ?? NOT_PROVIDED },
+    {
+      label: "Occupation or life stage",
+      value:
+        profile.occupation === "other" && profile.customOccupation
+          ? `Other: ${profile.customOccupation}`
+          : (labelFor(OCCUPATIONS, profile.occupation) ?? NOT_PROVIDED),
+    },
     { label: "Country of residence", value: profile.country ? countryName(profile.country) : NOT_PROVIDED },
     { label: "Age bracket", value: labelFor(AGE_BRACKETS, profile.ageBracket) ?? NOT_PROVIDED },
     {
@@ -191,6 +197,12 @@ export function ProfileManager({ initialProfile }: { initialProfile: Profile }) 
                       ))}
                 </dd>
               </div>
+              {profile.customActivity && (
+                <div className="grid gap-1 py-3 sm:grid-cols-[14rem_1fr] sm:gap-4">
+                  <dt className="text-small font-semibold">Other activity</dt>
+                  <dd className="break-words">{profile.customActivity}</dd>
+                </div>
+              )}
             </dl>
           </Card>
 

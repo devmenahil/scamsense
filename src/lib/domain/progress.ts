@@ -63,8 +63,14 @@ export function buildProgressSnapshot(input: {
   ledger: readonly (LedgerEntry & { moduleRunId: string })[];
   scores: readonly ScoreRecord[];
   profile: { incomeBracket: string | null; preferredCurrency: string | null };
+  /** Persisted routed scenario order per module (Step 8). */
+  scenarioOrders?: Partial<Record<string, readonly string[]>>;
 }): ProgressSnapshot {
-  const progression = computeProgression({ attempts: input.attempts, runs: input.runs });
+  const progression = computeProgression({
+    attempts: input.attempts,
+    runs: input.runs,
+    scenarioOrders: input.scenarioOrders,
+  });
   const pointsByAttempt = new Map(input.scores.map((s) => [s.attemptId, s.totalPoints]));
   const completedAt = new Map(input.attempts.map((a) => [a.id, a.completedAt]));
 

@@ -2,7 +2,13 @@ import "server-only";
 import type { User } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { PROFILE_COLUMNS, rowToProfile, type ProfileRow } from "@/lib/profile/mapping";
+import {
+  isMissingColumnError,
+  LEGACY_PROFILE_COLUMNS,
+  PROFILE_COLUMNS,
+  rowToProfile,
+  type ProfileRow,
+} from "@/lib/profile/mapping";
 import type { Profile } from "@/lib/profile/schema";
 import { createSupabaseServerClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
@@ -27,11 +33,11 @@ export const getCurrentProfile = cache(async (): Promise<ProfileResult> => {
   const user = await getCurrentUser();
   if (!user) return { status: "missing" };
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("profiles")
-    .select(PROFILE_COLUMNS)
-    .eq("user_id", user.id)
-    .maybeSingle<ProfileRow>();
+  const read = (columns: string) =>
+    supabase.from("profiles").select(columns).eq("user_id", user.id).maybeSingle<ProfileRow>();
+  let { data, error } = await read(PROFILE_COLUMNS);
+  // Before the Step 8 migration is applied the description columns don't exist yet: keep the app usable.
+  if (isMissingColumnError(error)) ({ data, error } = await read(LEGACY_PROFILE_COLUMNS));
   if (error) {
     console.error("[profile] read failed", { code: error.code });
     return { status: "error" };

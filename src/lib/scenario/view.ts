@@ -55,6 +55,8 @@ export interface ClientAttemptView {
   attemptNumber: number;
   /** Replays are practice attempts: never official (PRODUCT_SPEC §4.3). */
   isPractice: boolean;
+  /** True when the story details were personalized by Gemini (Step 8); false for authored defaults/fallback. */
+  personalized: boolean;
   state: ScenarioState;
   introLine: string;
   render: ScenarioRender;
@@ -110,8 +112,12 @@ export function buildClientView(input: {
   payments?: readonly AttemptPaymentData[];
   /** Whether PayPal Sandbox credentials are configured on the server. */
   paymentsAvailable?: boolean;
-  /** Personalization slot values; Step 6 uses the authored defaults. */
-  slots?: Record<string, string>;
+  /** The attempt's stored personalization (Step 8). Absent = authored defaults (legacy attempts, fallback). */
+  personalization?: {
+    slots: Record<string, string>;
+    introLine?: string | null;
+    source: "gemini" | "fallback";
+  } | null;
 }): ClientAttemptView {
   const { attempt, run } = input;
   const raw = getScenarioRender(attempt.scenarioKey);
@@ -124,9 +130,11 @@ export function buildClientView(input: {
     amountMinor,
     currency: run.currency,
     playerName: firstNameFrom(input.displayName),
-    slots: input.slots ?? {},
+    slots: input.personalization?.slots ?? {},
   });
-  const render = fillDeep(raw, values);
+  // A validated Gemini intro (src/lib/personalization/intro.ts) replaces the authored one; otherwise authored (R9).
+  const personalizedIntro = input.personalization?.introLine;
+  const render = fillDeep(personalizedIntro ? { ...raw, introLine: personalizedIntro } : raw, values);
   const locked = (LOCKED_STATES as readonly string[]).includes(attempt.state);
   const decision = render.decisions.find((d) => d.id === attempt.decisionId);
   const inCheckout =
@@ -146,6 +154,7 @@ export function buildClientView(input: {
     module: { key: mod.key, title: mod.title, order: mod.order },
     attemptNumber: attempt.attemptNumber,
     isPractice: attempt.isPractice,
+    personalized: input.personalization?.source === "gemini",
     state: attempt.state,
     introLine: render.introLine,
     render,

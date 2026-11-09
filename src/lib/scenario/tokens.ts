@@ -50,8 +50,21 @@ export function buildTokenValues(render: ScenarioRender, ctx: TokenContext): Rec
     const raw = ctx.slots[slot.name] ?? slot.default;
     const v = raw.slice(0, slot.maxLength).replace(/[{}<>]/g, "");
     values[slot.name] = v.length > 0 ? v : slot.default;
+    if (slot.kind === "name") values[`${slot.name}.initials`] = initialsOf(values[slot.name]!);
   }
   return values;
+}
+
+/** Up to two upper-case initials of a name ("Aria Studio" → "AS"). */
+export function initialsOf(name: string): string {
+  const letters = name
+    .split(/\s+/)
+    .map((w) => w.match(/\p{L}/u)?.[0] ?? "")
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  return letters.length > 0 ? letters : "?";
 }
 
 export function fillTokens(text: string, values: Record<string, string>): string {

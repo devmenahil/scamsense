@@ -11,7 +11,8 @@ export const answerKey: AuthoredAnswerKeyInput = {
     "Open your bank yourself (saved shortcut, typed address, or app) instead of using a link in an unexpected email.",
     "Notice deadlines and threats that push you to act before checking.",
   ],
-  activityTags: ["digital_wallet_usage", "account_security"],
+  // "subscriptions": an account notification email (Step 8 routing: subscriptions → account notifications).
+  activityTags: ["digital_wallet_usage", "account_security", "subscriptions"],
   contextTags: [
     "general_consumer",
     "student",

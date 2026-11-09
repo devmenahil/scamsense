@@ -118,7 +118,8 @@ export const chatThreadSchema = z.object({
   contact: z.object({
     name: text,
     subtitle: text,
-    initials: z.string().min(1).max(3),
+    /** 1–3 letters, or a {{<nameSlot>.initials}} token filled on the server. */
+    initials: z.union([z.string().min(1).max(3), z.string().regex(/^\{\{[a-z][A-Za-z0-9]*\.initials\}\}$/)]),
     anchor: anchorSchema,
     detailsActionId: idSchema.optional(),
     details: z.array(kvRowSchema),
@@ -512,12 +513,23 @@ export const actionSchema = z.object({
 });
 export type ActionContent = z.infer<typeof actionSchema>;
 
+/**
+ * A personalization slot (Step 8): a narrative-only phrase Gemini may rewrite for the player. Slots never carry
+ * evidence, amounts, or domains of evidence-bearing sites; Gemini values are validated per kind
+ * (src/lib/personalization/validate.ts) and fall back to the authored default.
+ *   text         a short phrase or sentence (no digits, currency, links, or judgment words)
+ *   name         a fictional person or business name; also provides {{<slot>.initials}}
+ *   domainLabel  the first label of a fictional ".example" domain (lower-case letters, digits, hyphens)
+ */
+export const SLOT_KINDS = ["text", "name", "domainLabel"] as const;
 export const slotSchema = z.object({
   name: z.string().regex(/^[a-z][A-Za-z0-9]{1,31}$/),
-  default: z.string().min(1).max(80),
-  maxLength: z.number().int().min(1).max(80),
+  kind: z.enum(SLOT_KINDS).default("text"),
+  default: z.string().min(1).max(160),
+  maxLength: z.number().int().min(1).max(160),
   purpose: text,
 });
+export type SlotContent = z.infer<typeof slotSchema>;
 
 export const scenarioRenderSchema = z.object({
   scenarioKey: z.enum(["m1-s1", "m1-s2", "m2-s1", "m2-s2", "m3-s1", "m3-s2"]),

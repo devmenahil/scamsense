@@ -127,7 +127,11 @@ export default async function ModuleOverviewPage({ params }: Props) {
             <h2 id="scenarios-heading" className="text-subheading font-bold">
               Scenarios
             </h2>
-            <p className="mt-1 text-small text-teal/85">Play them in either order.</p>
+            <p className="mt-1 text-small text-teal/85">
+              {progress.routed
+                ? "Ordered for you, based on the activities in your profile. Both scenarios are needed to finish the module, and you can play them in either order."
+                : "Both scenarios are needed to finish the module. Play them in either order."}
+            </p>
             <ul className="mt-4 grid gap-5 md:grid-cols-2">
               {progress.scenarios.map((s) => (
                 <ScenarioSlotCard

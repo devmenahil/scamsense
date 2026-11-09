@@ -7,11 +7,43 @@ import type { ScenarioRenderInput } from "../schema";
  */
 export const render: ScenarioRenderInput = {
   scenarioKey: "m1-s1",
-  contentVersion: "2026-11-10.step6",
+  contentVersion: "2026-11-12.step8",
   interfaceType: "chat_email",
   introLine: "You receive a message about your payment account.",
   startAppId: "messages",
   amountParts: { balance: 64_000, grocery: 1_150, transfer: 9_000 },
+  // Narrative-only personalization (Step 8). None of these elements is evidence.
+  slots: [
+    {
+      name: "friendName",
+      kind: "name",
+      default: "Maya",
+      maxLength: 24,
+      purpose:
+        "First name of a friend, classmate, colleague, or client the player chats with about everyday life.",
+    },
+    {
+      name: "friendMessage",
+      default: "Still on for lunch on Saturday?",
+      maxLength: 80,
+      purpose:
+        "That contact's last casual message, about the player's own life (studies, work, clients, a hobby, or their goal). Not about money, accounts, or security.",
+    },
+    {
+      name: "friendReply",
+      default: "Yes! 12:30 at the usual place 🙂",
+      maxLength: 80,
+      purpose: "The player's short friendly reply to that message.",
+    },
+    {
+      name: "recentMerchant",
+      kind: "name",
+      default: "Corner Market",
+      maxLength: 32,
+      purpose:
+        "A fictional everyday shop the player paid yesterday, fitting their life (a campus bookstore, art supply shop, office supplier…).",
+    },
+  ],
   apps: [
     {
       type: "messages",
@@ -148,17 +180,17 @@ export const render: ScenarioRenderInput = {
         {
           id: "maya",
           contact: {
-            name: "Maya",
+            name: "{{friendName}}",
             subtitle: "Mobile",
-            initials: "M",
+            initials: "{{friendName.initials}}",
             anchor: "friend_contact",
             details: [{ label: "Saved contact", value: "Yes" }],
           },
-          preview: "Still on for lunch on Saturday?",
+          preview: "{{friendMessage}}",
           time: "Yesterday",
           messages: [
-            { id: "m1", from: "contact", time: "Yesterday", text: "Still on for lunch on Saturday?" },
-            { id: "m2", from: "me", time: "Yesterday", text: "Yes! 12:30 at the usual place 🙂" },
+            { id: "m1", from: "contact", time: "Yesterday", text: "{{friendMessage}}" },
+            { id: "m2", from: "me", time: "Yesterday", text: "{{friendReply}}" },
           ],
         },
       ],
@@ -191,7 +223,7 @@ export const render: ScenarioRenderInput = {
               anchor: "account_activity",
               columns: ["Date", "Description", "Amount", "Status"],
               rows: [
-                ["Yesterday", "Corner Market", "−{{amount.grocery}}", "Completed"],
+                ["Yesterday", "{{recentMerchant}}", "−{{amount.grocery}}", "Completed"],
                 ["Oct 30", "Sent to Sam R.", "−{{amount.transfer}}", "Completed"],
               ],
             },

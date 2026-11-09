@@ -10,6 +10,7 @@
  *   • At most one open (unfinished) attempt per scenario: the user resumes it instead of starting another.
  */
 import { MODULES, type ModuleDefinition, type ModuleKey, type ScenarioKey } from "@/content/modules";
+import { applyScenarioOrder } from "./routing";
 import { SCENARIO_STATES, type ScenarioState } from "./scenarioStateMachine";
 
 export type ModuleStatus = "locked" | "available" | "in_progress" | "completed";
@@ -36,6 +37,7 @@ export interface ModuleRunRecord {
 
 export interface ScenarioProgress {
   key: ScenarioKey;
+  /** Display position: 1 = recommended first by the routed order (Step 8), else the authored slot order. */
   position: 1 | 2;
   title: string;
   status: ScenarioStatus;
@@ -49,6 +51,8 @@ export interface ScenarioProgress {
 
 export interface ModuleProgress {
   module: ModuleDefinition;
+  /** True when the scenarios are listed in this learner's persisted routed order (Step 8). */
+  routed: boolean;
   status: ModuleStatus;
   unlocked: boolean;
   /** True once the module's training-funds period (module run) has started. */
@@ -109,15 +113,21 @@ function scenarioProgress(
 export function computeProgression(input: {
   attempts: readonly AttemptRecord[];
   runs: readonly ModuleRunRecord[];
+  /** Persisted routed order per module (Step 8). Ordering only: both scenarios always stay required. */
+  scenarioOrders?: Partial<Record<string, readonly string[]>>;
 }): ProgressionSummary {
   const modules: ModuleProgress[] = [];
   let previousComplete: boolean = true; // Module 1 has no prerequisite.
   for (const m of [...MODULES].sort((a, b) => a.order - b.order)) {
     const unlocked: boolean = previousComplete;
-    const scenarios = m.scenarios.map((s) => scenarioProgress(s, input.attempts, unlocked)) as [
-      ScenarioProgress,
-      ScenarioProgress,
-    ];
+    const order = input.scenarioOrders?.[m.key];
+    const ordered = applyScenarioOrder(m.scenarios, order);
+    // applyScenarioOrder ignores an invalid order, so "routed" means the persisted order was actually applied.
+    const routed = !!order && ordered.map((s) => s.key).join() === order.join();
+    const scenarios = ordered.map((s, i) => ({
+      ...scenarioProgress(s, input.attempts, unlocked),
+      position: (i + 1) as 1 | 2,
+    })) as [ScenarioProgress, ScenarioProgress];
     const completedScenarios = scenarios.filter((s) => s.status === "completed").length;
     const started = input.runs.some((r) => r.moduleKey === m.key);
     const complete: boolean = unlocked && completedScenarios === scenarios.length;
@@ -128,7 +138,7 @@ export function computeProgression(input: {
         : started || scenarios.some((s) => s.status !== "not_started")
           ? "in_progress"
           : "available";
-    modules.push({ module: m, status, unlocked, started, scenarios, completedScenarios });
+    modules.push({ module: m, status, unlocked, started, routed, scenarios, completedScenarios });
     previousComplete = complete;
   }
   const completedScenarios = modules.reduce((n, m) => n + m.completedScenarios, 0);

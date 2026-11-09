@@ -1,3 +1,4 @@
+import { JUDGMENT_PATTERNS } from "./neutrality";
 import { describe, expect, it } from "vitest";
 import { MODULES, SCENARIO_KEYS } from "@/content/modules";
 import { FINANCIAL_ACTIVITY_VALUES, OCCUPATION_VALUES } from "@/content/profileOptions";
@@ -22,24 +23,8 @@ const strings = (v: unknown, out: string[] = []): string[] => {
   return out;
 };
 
-/** Words that would judge or hint during play (ARCHITECTURE §6). Checked against everything the player sees. */
-const DENY = [
-  /\bscam/i,
-  /suspicious/i,
-  /red flag/i,
-  /\bfake\b/i,
-  /fraud/i,
-  /phishing/i,
-  /\bwarning/i,
-  /\bhint\b/i,
-  /legit/i,
-  /look-?alike/i,
-  /spoof/i,
-  /unfamiliar/i,
-  /be careful/i,
-  /genuine/i,
-  /official/i,
-];
+/** Words that would judge or hint during play (shared with the runtime personalization validator). */
+const DENY = JUDGMENT_PATTERNS;
 
 /**
  * IDs reach the browser (anchors as data attributes, action/decision/message IDs in the payload), so they must
@@ -222,6 +207,7 @@ describe("scenario catalogue", () => {
         "playerName",
         ...Object.keys(t.render.amountParts).flatMap((p) => [`amount.${p}`, `amount.minus.${p}`]),
         ...t.render.slots.map((s) => s.name),
+        ...t.render.slots.filter((s) => s.kind === "name").map((s) => `${s.name}.initials`),
       ]);
       for (const token of collectTokens(t.render))
         expect(known, `${t.scenarioId}: {{${token}}}`).toContain(token);
@@ -237,7 +223,9 @@ describe("scenario catalogue", () => {
       expect(t.difficulty.requiredVerificationActions.length).toBeGreaterThan(0);
       expect(t.difficulty.numberOfDecisionPoints).toBeGreaterThanOrEqual(1);
       expect(t.evidenceReferences).toEqual([]); // no invented statistics or sources
-      expect(t.supportedPersonalizationFields).not.toContain("ageBracket");
+      // Step 8: the age bracket may tune the narrative's tone only; it is never a routing input (routing.test.ts).
+      expect(t.supportedPersonalizationFields).not.toContain("incomeBracket");
+      expect(t.supportedPersonalizationFields).not.toContain("country");
     }
     // Advanced scenarios have more decision points than beginner ones.
     const points = (k: keyof typeof SCENARIO_TEMPLATES) =>
@@ -251,7 +239,8 @@ describe("scenario catalogue", () => {
     expect(Object.keys(PROFILE_CONTEXT_TAG).sort()).toEqual([...OCCUPATION_VALUES].sort());
     // Every profile activity reaches at least one scenario, except the documented MVP gaps (no investment or
     // invoice-sending storyline among the six; routing then falls back to the module's default order).
-    const gaps = ["investments", "sending_invoices"];
+    // "other" has no fixed tags: its description is interpreted into tags at routing time (src/lib/routing).
+    const gaps = ["investments", "sending_invoices", "other"];
     for (const [activity, tags] of Object.entries(PROFILE_ACTIVITY_TAGS)) {
       const reach = templates.filter((t) => t.activityTags.some((a) => tags.includes(a)));
       expect(reach.length > 0, activity).toBe(!gaps.includes(activity));

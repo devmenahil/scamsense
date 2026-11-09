@@ -127,3 +127,76 @@ describe("signUpSchema", () => {
     expect(signUpSchema.safeParse({ ...base, password: "x".repeat(73) }).success).toBe(false);
   });
 });
+
+describe("Other options and custom descriptions (Step 8)", () => {
+  it("requires a meaningful description only when the matching Other option is selected", () => {
+    expect(profileInputSchema.safeParse({ ...valid, occupation: "other" }).success).toBe(false);
+    expect(
+      profileInputSchema.safeParse({ ...valid, occupation: "other", customOccupation: "x" }).success,
+    ).toBe(false);
+    expect(
+      profileInputSchema.safeParse({ ...valid, occupation: "other", customOccupation: "123" }).success,
+    ).toBe(false);
+    expect(profileInputSchema.safeParse({ ...valid, financialActivities: ["other"] }).success).toBe(false);
+    expect(profileInputSchema.safeParse({ ...valid, financialGoal: "other", customGoal: "" }).success).toBe(
+      false,
+    );
+    const ok = profileInputSchema.parse({
+      ...valid,
+      occupation: "other",
+      customOccupation: "  Digital   artist ",
+      financialActivities: ["other", "online_selling"],
+      customActivity: "I sell commissions <b>online</b>",
+      financialGoal: "other",
+      customGoal: "Saving for a professional photography setup",
+    });
+    expect(ok.customOccupation).toBe("Digital artist");
+    expect(ok.customActivity).toBe("I sell commissions bonline/b"); // markup characters stripped
+    expect(ok.customGoal).toBe("Saving for a professional photography setup");
+  });
+
+  it("keeps descriptions optional otherwise, and clears them when Other isn't selected", () => {
+    const out = profileInputSchema.parse({
+      ...valid,
+      customOccupation: "Digital artist",
+      customActivity: "sell art",
+    });
+    expect(out.customOccupation).toBeNull();
+    expect(out.customActivity).toBeNull();
+    expect(profileInputSchema.parse(valid).customGoal).toBeNull(); // goal detail stays optional for listed goals
+  });
+
+  it("limits description length", () => {
+    expect(
+      profileInputSchema.safeParse({ ...valid, occupation: "other", customOccupation: "a".repeat(81) })
+        .success,
+    ).toBe(false);
+    expect(
+      profileInputSchema.safeParse({
+        ...valid,
+        financialActivities: ["other"],
+        customActivity: "a".repeat(161),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates the onboarding steps with their descriptions", () => {
+    expect(aboutStepSchema.safeParse({ displayName: "A", occupation: "other", country: "US" }).success).toBe(
+      false,
+    );
+    expect(
+      aboutStepSchema.safeParse({
+        displayName: "A",
+        occupation: "other",
+        customOccupation: "Nurse",
+        country: "US",
+      }).success,
+    ).toBe(true);
+    expect(
+      activitiesStepSchema.safeParse({ financialActivities: ["other"], paymentExperience: "new" }).success,
+    ).toBe(false);
+    expect(profileDraftSchema.parse({ occupation: "student", customOccupation: "ignored" })).toMatchObject({
+      customOccupation: null,
+    });
+  });
+});

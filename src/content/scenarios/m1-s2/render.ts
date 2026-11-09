@@ -1,4 +1,5 @@
 import type { ScenarioRenderInput } from "../schema";
+import { everydayEmailSlots } from "../slots";
 
 /**
  * M1-S2 — Your Account Needs Attention (email client + fictional web browser). Client-safe (R10).
@@ -7,11 +8,28 @@ import type { ScenarioRenderInput } from "../schema";
  */
 export const render: ScenarioRenderInput = {
   scenarioKey: "m1-s2",
-  contentVersion: "2026-11-10.step6",
+  contentVersion: "2026-11-12.step8",
   interfaceType: "web_browser",
   introLine: "You receive a notification about your account.",
   startAppId: "mail",
   amountParts: { balance: 52_000, rent: 18_000, salary: 31_000 },
+  // Narrative-only personalization (Step 8). None of these elements is evidence.
+  slots: [
+    ...everydayEmailSlots({
+      senderName: "Riverside Community Library",
+      domain: "riverside-library",
+      subject: "Reminder: book club on Thursday",
+      preview: "This month we're reading a mystery novel…",
+      body: "This month we're reading a mystery novel. See you Thursday at 6 PM in Room B.",
+    }),
+    {
+      name: "incomeLabel",
+      default: "Salary",
+      maxLength: 40,
+      purpose:
+        "How the player's regular incoming money appears in their bank activity, fitting their life (e.g. 'Payroll – campus job', 'Client transfer – Aria Studio', 'Pension').",
+    },
+  ],
   apps: [
     {
       type: "mail",
@@ -83,17 +101,17 @@ export const render: ScenarioRenderInput = {
         },
         {
           id: "library",
-          from: { name: "Riverside Community Library", address: "events@riverside-library.example" },
+          from: { name: "{{otherSenderName}}", address: "hello@{{otherDomain}}.example" },
           fromAnchor: "library_sender",
           to: "me@inkwell-mail.example",
-          subject: "Reminder: book club on Thursday",
+          subject: "{{otherSubject}}",
           listDate: "Oct 30",
           fullDate: "Oct 30, 4:15 PM",
-          preview: "This month we're reading a mystery novel…",
+          preview: "{{otherPreview}}",
           body: [
             {
               type: "p",
-              text: "This month we're reading a mystery novel. See you Thursday at 6 PM in Room B.",
+              text: "{{otherBody}}",
             },
           ],
         },
@@ -196,7 +214,7 @@ export const render: ScenarioRenderInput = {
               columns: ["Date", "Description", "Amount"],
               rows: [
                 ["Nov 3", "Rent – Oakview Homes", "−{{amount.rent}}"],
-                ["Oct 31", "Salary", "+{{amount.salary}}"],
+                ["Oct 31", "{{incomeLabel}}", "+{{amount.salary}}"],
               ],
             },
           ],

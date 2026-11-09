@@ -12,9 +12,11 @@
     "test:watch": "vitest",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:integration": "vitest run --config vitest.integration.config.mts"
+    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "test:gemini": "vitest run --config vitest.gemini.config.mts"
   },
   "dependencies": {
+    "@google/genai": "^3.0.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.0",
     "clsx": "^2.1.1",

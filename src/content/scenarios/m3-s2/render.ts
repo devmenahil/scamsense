@@ -7,7 +7,7 @@ import type { ScenarioRenderInput } from "../schema";
  */
 export const render: ScenarioRenderInput = {
   scenarioKey: "m3-s2",
-  contentVersion: "2026-11-10.step6",
+  contentVersion: "2026-11-12.step8",
   interfaceType: "marketplace",
   introLine: "A buyer has contacted you about an item you're selling.",
   startAppId: "seller",
@@ -16,7 +16,15 @@ export const render: ScenarioRenderInput = {
       name: "itemName",
       default: "mirrorless camera kit",
       maxLength: 40,
-      purpose: "The item the player is selling (matched to their activities).",
+      purpose:
+        "The secondhand item the player is selling, matched to their life (it must still be a camera-type gadget so it fits the listing photo).",
+    },
+    {
+      name: "earlierBuyerName",
+      kind: "name",
+      default: "Priya Kaur",
+      maxLength: 24,
+      purpose: "A fictional earlier buyer (first and last name) who paid the player last week.",
     },
   ],
   amountParts: { headphones: 2_400, tablet: 3_600, lastSale: 2_900, coffee: 90, balance: 8_200 },
@@ -259,13 +267,16 @@ export const render: ScenarioRenderInput = {
           from: { name: "TandemPay", address: "service@tandempay.example" },
           fromAnchor: "earlier_payment_sender",
           to: "me@inkwell-mail.example",
-          subject: "You received {{amount.lastSale}} from Priya K.",
+          subject: "You received {{amount.lastSale}} from {{earlierBuyerName}}",
           listDate: "Nov 2",
           fullDate: "Nov 2, 3:41 PM",
           preview: "It's in your TandemPay balance now…",
           openActionId: "open_earlier_payment_email",
           body: [
-            { type: "p", text: "Hi {{playerName}}, you received {{amount.lastSale}} from Priya K." },
+            {
+              type: "p",
+              text: "Hi {{playerName}}, you received {{amount.lastSale}} from {{earlierBuyerName}}.",
+            },
             {
               type: "small",
               text: "It's in your TandemPay balance now. You can see it in the app under Activity.",
@@ -303,7 +314,7 @@ export const render: ScenarioRenderInput = {
               anchor: "wallet_activity",
               columns: ["Date", "From / to", "Amount", "Status"],
               rows: [
-                ["Nov 2", "Priya K.", "+{{amount.lastSale}}", "Completed"],
+                ["Nov 2", "{{earlierBuyerName}}", "+{{amount.lastSale}}", "Completed"],
                 ["Oct 28", "Harbor Coffee Co.", "−{{amount.coffee}}", "Completed"],
               ],
             },

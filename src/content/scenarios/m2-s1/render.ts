@@ -1,4 +1,5 @@
 import type { ScenarioRenderInput } from "../schema";
+import { everydayEmailSlots } from "../slots";
 
 /**
  * M2-S1 — An Invoice Has Arrived (invoice and payment-request simulator). Client-safe (R10).
@@ -7,11 +8,28 @@ import type { ScenarioRenderInput } from "../schema";
  */
 export const render: ScenarioRenderInput = {
   scenarioKey: "m2-s1",
-  contentVersion: "2026-11-10.step6",
+  contentVersion: "2026-11-12.step8",
   interfaceType: "invoice",
   introLine: "A new invoice has arrived in your inbox.",
   startAppId: "mail",
   amountParts: { upgrade: 7_200, previous: 1_600, coffee: 120 },
+  // Narrative-only personalization (Step 8). None of these elements is evidence.
+  slots: [
+    {
+      name: "workspaceName",
+      default: "Personal files and photo backups",
+      maxLength: 48,
+      purpose:
+        "What the player keeps in their Brightline Cloud storage, fitting their life (e.g. 'Coursework and thesis drafts', 'Client artwork and project files').",
+    },
+    ...everydayEmailSlots({
+      senderName: "Harbor Coffee Co.",
+      domain: "harborcoffee",
+      subject: "Your order is ready for pickup",
+      preview: "One oat flat white, ready at the counter…",
+      body: "One oat flat white, ready at the counter.",
+    }),
+  ],
   checkout: { payee: "Brightline Billing Services LLC", description: "Invoice BLC-2611-0932" },
   apps: [
     {
@@ -135,6 +153,7 @@ export const render: ScenarioRenderInput = {
               anchor: "previous_receipt_details",
               rows: [
                 { label: "Plan", value: "Starter (monthly)" },
+                { label: "Workspace", value: "{{workspaceName}}" },
                 { label: "Amount", value: "{{amount.previous}}" },
                 { label: "Paid with", value: "Card ending 1182 (automatic)" },
                 { label: "Receipt", value: "BLC-2610-4471" },
@@ -149,17 +168,17 @@ export const render: ScenarioRenderInput = {
         },
         {
           id: "coffee",
-          from: { name: "Harbor Coffee Co.", address: "orders@harborcoffee.example" },
+          from: { name: "{{otherSenderName}}", address: "hello@{{otherDomain}}.example" },
           fromAnchor: "coffee_sender",
           to: "me@inkwell-mail.example",
-          subject: "Your order is ready for pickup",
+          subject: "{{otherSubject}}",
           listDate: "Nov 7",
           fullDate: "Nov 7, 8:20 AM",
-          preview: "One oat flat white, ready at the counter…",
+          preview: "{{otherPreview}}",
           body: [
             {
               type: "p",
-              text: "One oat flat white, ready at the counter. Total {{amount.coffee}}, paid in the app.",
+              text: "{{otherBody}} Total {{amount.coffee}}, paid in the app.",
             },
           ],
         },
@@ -211,6 +230,7 @@ export const render: ScenarioRenderInput = {
               anchor: "portal_plan",
               rows: [
                 { label: "Plan", value: "Starter (monthly)" },
+                { label: "Workspace", value: "{{workspaceName}}" },
                 { label: "Next payment", value: "{{amount.previous}} on Dec 9" },
                 { label: "Payment method", value: "Card ending 1182 (automatic)" },
                 { label: "Outstanding balance", value: "None" },

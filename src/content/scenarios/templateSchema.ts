@@ -70,6 +70,8 @@ export const PROFILE_ACTIVITY_TAGS: Record<
   subscription_payments: ["subscriptions"],
   investments: ["investments"],
   digital_wallet_usage: ["digital_wallet_usage", "account_security"],
+  // "Other" has no fixed tags: its description is interpreted (exact label match, else Gemini) in src/lib/routing.
+  other: [],
 };
 export const PROFILE_CONTEXT_TAG: Record<(typeof OCCUPATION_VALUES)[number], ContextTag> = {
   student: "student",
@@ -82,14 +84,20 @@ export const PROFILE_CONTEXT_TAG: Record<(typeof OCCUPATION_VALUES)[number], Con
   other: "general_consumer",
 };
 
-/** Profile fields the Step 8 personalization may read (never free text beyond the display name). */
+/**
+ * Profile fields Step 8 personalization may read. Free text (custom descriptions, goal) is sanitized, length-capped,
+ * and passed to Gemini as untrusted data only. Never email, income, country, or anything about money.
+ */
 export const PERSONALIZATION_FIELDS = [
   "displayName",
   "occupation",
+  "customOccupation",
   "financialActivities",
+  "customActivity",
   "paymentExperience",
   "financialGoal",
-  "country",
+  "customGoal",
+  "ageBracket",
 ] as const;
 
 /**

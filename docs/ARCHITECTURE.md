@@ -1,6 +1,6 @@
 # ScamSense — Technical Architecture
 
-Status: updated for Phase 5 (Step 7: genuine PayPal Sandbox checkout). Read together with `CLAUDE.md` (rules), `PRODUCT_SPEC.md` (behavior), and `DATA_MODEL.md`.
+Status: updated for Phase 6 (Step 8: hybrid routing, Gemini personalization, Gemini reasoning evaluation; §19). Read together with `CLAUDE.md` (rules), `PRODUCT_SPEC.md` (behavior), and `DATA_MODEL.md`.
 
 ## 1. System overview
 
@@ -142,7 +142,7 @@ The error shape is `{ error: { code, message } }`.
 | `PUT /api/profile` | Complete profile (`.strict()`); goal amount as a major-unit string, converted server-side to minor units | Profile, `onboarding_completed = true`. Unknown keys (e.g. `user_id`) → 400 |
 | `GET /api/config/currencies` | — | Supported currency list (from the server allowlist) |
 | `GET /api/progress` | — | `{progress}`: the `ProgressSnapshot` (module lock states, scenario statuses with start/resume/replay actions, current Training Funds or next-module preview, per-module ledger + summary, scores, badge dates). Read through RLS. 403 until onboarded |
-| `POST /api/modules/[moduleKey]/start` | — (no body) | Opens the module's Training Funds period: server computes currency + amount from the saved profile, checks the unlock, calls `start_module_run`. 201 new, 200 already started (idempotent), 409 locked, 404 unknown |
+| `POST /api/modules/[moduleKey]/start` | — (no body) | Opens the module's Training Funds period: server computes currency + amount from the saved profile, checks the unlock, calls `start_module_run`. **Step 8:** then fixes the routed scenario order once (`ensureModuleOrder`; the only place routing may call Gemini). 201 new, 200 already started (idempotent), 409 locked, 404 unknown |
 
 ### Scenario attempts (Step 6, implemented)
 | Method & path | Body | Returns / effect |
@@ -151,7 +151,9 @@ The error shape is `{ error: { code, message } }`.
 | `GET /api/attempts/[id]` | — | `{attempt: ClientAttemptView}` (`src/lib/scenario/view.ts`): state, intro line, token-filled render, recorded action IDs, pending/locked decision, own locked explanation, `checkout` while a pay decision is in a payment state (amount text, currency, fictional payee, sequence, `available`, `openOrder`, `lastClosed`), `payment` once a Sandbox capture is verified (amount, order id, capture id; never its spending/scam meaning), `isPractice`. **Never the answer key.** Foreign/unknown → 404 |
 | `POST /api/attempts/[id]/events` | `{type}`: START · RECORD_ACTION{actionId} · SELECT_DECISION{decisionId} · CLEAR_DECISION · CONFIRM_DECISION · RETRY_PAYMENT · FINALIZE (strict; PAYMENT_CANCELLED moved to `/checkout/cancel` in Step 7) | Pure `transition()` decides, `apply_attempt_event` re-checks and records. Server-only events are rejected (400). Illegal → 409, unknown IDs → 400. Returns the new view |
 | `POST /api/attempts/[id]/justification` | `{text}` (20–1000 after trimming) | Locks the explanation → `PAYMENT_PENDING` (pay) or `FINALIZED`. Returns the new view |
-| `GET /api/attempts/[id]/results` | — | *(Step 8–9)* Only when `COMPLETED` |
+| `GET /api/attempts/[id]/evaluation` | — | *(Step 8)* Stored evaluation status: `not_ready` · `pending` · `failed {basicAvailable, geminiAvailable}` · `complete {results}` (results only once COMPLETED). Never calls Gemini |
+| `POST /api/attempts/[id]/evaluation` | `{mode?: "ai" \| "basic"}` (strict) | *(Step 8)* Evaluates a FINALIZED attempt once (claim → one Gemini call → backend score → `record_attempt_evaluation`). Duplicate-safe (`pending` for a concurrent call, stored result once complete). `basic` only after a real failure (409 otherwise). 409 `not_finalized` |
+| `GET /api/dev/gemini-usage` | — | *(Step 8)* Development-only usage counters (404 in production) |
 
 ### PayPal Sandbox checkout (Step 7, implemented; attempt-scoped so ownership is checked like every attempt route)
 | Method & path | Body | Effect |
@@ -247,29 +249,33 @@ their own row and log.
 | Unlocks, badges, completion | **Deterministic** | R7, R24 |
 | Score composition | **Deterministic** formula | See 8.4 |
 | Recovery Playbook facts | **Authored + verified** (never AI) | R21, R30 |
-| Scenario surface personalization | Gemini → validated slots, fallback = authored defaults | Never changes evidence or answers |
-| Which evidence the user's reasoning addressed | Gemini proposes, validated against known IDs; fallback = keyword match | AI judges *reasoning coverage*, not truth |
+| Scenario order within a module | **Deterministic** formula (§19.2); Gemini may only map custom text to approved tags | Write-once per (user, module) |
+| Scenario surface personalization | Gemini → validated narrative slots + neutral intro, fallback = authored defaults | Never changes evidence, answers, setting, or amounts |
+| Which evidence the user's reasoning addressed | Gemini proposes, validated against known IDs; fallback (after a failure, learner's choice) = keyword match | AI judges *reasoning coverage*, not truth |
 | Personalized factual feedback paragraph | Gemini, grounded on the answer key; fallback = authored text | R14 |
 | Short humorous comment (separate field) | Gemini; fallback = neutral encouraging line from a fixed pool | R14 |
 | Chat answers | Gemini, scope-limited and grounded | R22 |
 
-### 8.2 Gemini call contracts (all JSON-validated with Zod; 8–10s timeout; 1 retry where noted)
+### 8.2 Gemini call contracts (implemented in Step 8; see §19 for details)
+All calls go through `src/lib/ai/gemini.ts` (official `@google/genai` SDK, `responseJsonSchema` structured output,
+Zod re-validation, deadline + bounded retries, rate limiting, usage counters). Model = `GEMINI_MODEL` only.
+1. **Classify custom profile text** (`src/lib/routing/classifier.ts`, routing only, at module start, cached by
+   fingerprint). In: custom occupation/activity text (fenced), predefined labels, tag vocabulary. Out:
+   `{mappedActivityTags, mappedContextTags, contextSummary, unmappedDescriptions, interpretationStatus,
+   shortExplanation}`; unknown tags, vulnerability claims, echoed instructions → rejected.
+2. **Personalize scenario** (`src/lib/personalization/`, once per scenario per learner at first play). In: the scenario's
+   neutral setting, its authoritative intro facts and personalization hint, its declared slots, sanitized profile.
+   Out: `{scenarioId, introLine, slots}`; intro checked by `src/lib/personalization/intro.ts`; per-slot validation, fallback
+   per slot / whole instance.
+3. **Evaluate reasoning + humor** (`src/lib/evaluation/`, ONE call per finalized attempt). In: answer-key concepts and
+   evidence, deterministic correctness, actions, explanation (fenced), verified payment outcome, story details, minimal
+   profile. Out: `{scenarioId, decisionAssessment, recognizedEvidenceIds, missedEvidenceIds, unsupportedAssumptions,
+   reasoningExplanation, verificationFeedback, paymentBehaviorFeedback, improvementAdvice, educationalTakeaway,
+   humorousComment, evaluationConfidence}`; IDs whitelisted, correctness guard, policy/statistics/points/link/mocking
+   guards. No points field exists.
+4. **Chat** (Sensei Kenshi, Phase 11).
 
-1. **Personalize scenario** (once at attempt creation, cached on the attempt)
-   - In: profile (no free-text PII beyond display name), slot definitions + defaults.
-   - Out: `{slots: {[name]: string}}`. Each value is length-checked and must not contain URLs, digits beyond an
-     allowed pattern, or deny-listed judgment words. Invalid slots → defaults.
-2. **Evaluate reasoning** (once at justification submit, 1 retry)
-   - In: decision + whether it is correct (already computed), justification, the evidence list (ids, classification,
-     explanation), legitimacy, profile summary.
-   - Out: `{addressedEvidenceIds: string[], misconceptions: string[] (≤3, short), feedback: string (≤900 chars),
-     humor: string (≤200 chars)}`.
-   - Post-validation: drop unknown IDs. Feedback must not contradict the deterministic correctness (a guard checks
-     that the correctness phrase matches). On failure → fallback.
-3. **Chat** (Sensei Kenshi). Free text output, streamed. Scope enforced by the system prompt (§8.3).
-
-Prompts live in `src/lib/integrations/gemini/prompts/` as versioned functions. The prompt version is stored with each
-evaluation.
+Prompt versions are stored with each personalization and evaluation row.
 
 ### 8.3 Sensei Kenshi grounding
 System prompt: identity (friendly sensei, brand tone), scope (scenarios, scam awareness, PayPal), hard rules (no
@@ -296,10 +302,11 @@ The rubric (`ScoringRubric`) is part of each server-only answer key. `scoreScena
 `ReasoningAssessment`; nothing fabricates one. The results screen still leads with qualitative feedback (praise
 first, R37); points are shown alongside.
 
-### 8.5 Fallback evaluation
-Case-insensitive keyword/phrase matching of the justification against each evidence item's `keywords`, followed by
-authored `fallbackFeedback[correct|incorrect]` and a fixed encouraging line instead of humor. The UI shows a subtle
-"Detailed AI feedback is unavailable right now" note.
+### 8.5 Fallback evaluation (implemented, `src/lib/evaluation/fallback.ts`)
+Offered only after a real Gemini failure (or when Gemini isn't configured) and only when the learner chooses "Continue
+with basic feedback". Whole-word keyword/phrase matching of the justification against each evidence item's `keywords`,
+authored `feedbackCorrect|feedbackIncorrect`, `safestNextStep`, `keyLessons`, and a fixed encouragement line instead of
+humor. Stored with `source = 'fallback'` and labelled "Basic feedback" on the results page.
 
 ## 9. PayPal Sandbox transaction lifecycle (Step 7, implemented)
 
@@ -549,3 +556,98 @@ Replay (practice attempt)
   fictional TandemPay instead of any PayPal look-alike.
 - **Performance:** an event request is three sequential round trips (auth, [profile ‖ attempt+run+events], RPC); the
   RPC returns the updated row, so the view is rebuilt without a second read.
+
+## 19. Hybrid intelligence (Phase 6 / Step 8)
+
+### 19.1 Components and when Gemini is used
+| Component | Code | Gemini? |
+| --- | --- | --- |
+| A. Deterministic routing | `src/lib/domain/routing.ts` (pure), `src/lib/routing/profileTags.ts` | Never |
+| B. Custom-input interpretation | `src/lib/routing/classifier.ts`, `src/lib/routing/server.ts` | Only for a meaningful "Other" occupation/activity description without a cached interpretation, at module start |
+| C. Scenario personalization | `src/lib/personalization/{prompt,validate,server}.ts` | Once per scenario per learner, when first played (all six) |
+| D. Reasoning evaluation + humor | `src/lib/evaluation/{facts,prompt,schema,fallback,results,server}.ts` | Once per finalized attempt (original or replay) |
+
+### 19.2 Deterministic routing
+`ScenarioRelevanceScore = 0.50·A + 0.20·C + 0.15·E + 0.15·D`, integer basis points, ties by scenario key:
+- **A** = |user activity tags ∩ scenario activity tags| / |scenario activity tags|.
+- **C** = |user context tags ∩ scenario context tags| / |user context tags| (neutral `general_consumer` when unknown).
+- **E** = 0.5 for every scenario (no verified evidence knowledge base; no invented fraud rates or demographic risk).
+- **D** = 1 (both scenarios share their module's difficulty; never adjusted for age, occupation, or experience).
+Only the two scenarios of the module being started are ranked (`rankModuleScenarios` refuses anything else); both stay
+mandatory and playable in either order; the first is shown as recommended. The order is written once to
+`module_scenario_orders` (insert-only + update trigger), so refresh, sign-in, profile edits, and replays never reorder.
+Modules started before Step 8 are initialized once, on the next progress read, without calling Gemini
+(`routing_source = 'legacy_initialization'`). If the table is unavailable, the authored order is used.
+
+**Tag vocabulary** (`templateSchema.ts`): activities `online_shopping, online_selling, freelancing, sending_invoices,
+receiving_invoices, paying_invoices, job_seeking, subscriptions, business_purchasing, digital_wallet_usage,
+account_security, investments`; contexts `student, employed_professional, freelancer, business_owner, self_employed,
+job_seeker, retired, general_consumer`. Predefined options map through `PROFILE_ACTIVITY_TAGS` / `PROFILE_CONTEXT_TAG`.
+
+**Resolution order** (`planInterpretation`): predefined selections → an "Other" description that exactly matches an
+option label/id (case/punctuation-insensitive) → vague text ("something else", "n/a", …) = neutral → otherwise Gemini.
+A custom goal never adds routing tags (documented rule); it only informs personalization and humor.
+
+### 19.3 Classification cache and invalidation
+Key = SHA-256 of `{classifier version, normalized occupation text, normalized activity text}` (only the descriptions
+whose "Other" option is selected). `profile_interpretations` stores only the validated tags and a short neutral
+summary (never the raw text). Unchanged text → cache hit (0 calls) in every module; changed text → new fingerprint →
+one new classification at the next module start; a classifier-version bump invalidates all entries. Failures are not
+cached: routing then uses predefined tags plus deterministic matches (`custom_fallback`).
+
+### 19.4 Personalization
+Every scenario declares narrative-only slots (`render.slots`, kinds `text | name | domainLabel`): M1-S1 friend chat +
+recent merchant; M1-S2, M2-S1, M3-S1 an "everyday email" from the learner's life (+ bank income label, cloud workspace
+name, job title); M2-S2 laptop use; M3-S2 item name + earlier buyer. Evidence, amounts, decisions, actions, anchors,
+domains of evidence-bearing sites, checkout, and the neutral intro stay authored, so ground truth is preserved by
+construction. Gemini values are validated per slot (length; no digits/currency so amounts only come from server tokens;
+no links/emails/markup; no judgment, hint, credential, urgency, or payment vocabulary; no real brands; names look like
+names; a domain label may not imitate any domain or organization already in the scenario). Rejected slots fall back
+individually; nothing valid → retry once → tracked fallback instance.
+
+Lifecycle: `startScenarioAttempt` (new, replay, or resume still on INTRO) → `ensureAttemptPersonalization` →
+`claim_scenario_personalization` (advisory lock: `ready` → reuse, `busy` → wait ≤10s, `claimed` → generate) →
+`complete_scenario_personalization` → `link_attempt_personalization` (only while the attempt is INTRO). The START event
+prepares it once more if a response was lost. Views read the linked instance; nothing regenerates on refresh, app
+switching, or re-render. Replays reuse the scenario's Gemini instance; a fallback instance is retried on the next new
+attempt.
+
+**Personalized intros (owner decision 13).** The same request returns `introLine`. `INTRO_RULES` (`intro.ts`) gives each
+scenario authoritative facts sent to Gemini (channel, roles, situation; never the truth), a personalization hint (which
+profile details fit, e.g. M3-S1 uses occupation/job search, never shopping or devices), and checks: required setting
+words (M2-S2 must say online/marketplace/listing and laptop), forbidden contradictions (M2-S2: local, nearby, in person,
+private seller…; M1-S1: email/inbox; M3-S2: buying), a spoiler/hint/instruction/credential/evidence deny list, one
+sentence of 15–120 characters starting with You/Your/A/An, no digits/links/real brands, and capitalized names only if
+they already appear in the scenario or its validated slots. A rejected intro falls back to the authored one (recorded in
+`fallback_reason`); the validated intro is stored in `scenario_personalizations.intro_line` and reused on refresh,
+resume, and replays. Live check (2026-11-13, 4 × 6 requests while tuning): the final configuration accepted 6/6 accurate,
+personalized intros.
+
+### 19.5 Evaluation and scoring
+FINALIZED (decision + explanation locked; any checkout captured, cancelled, or finished without paying) → the player
+calls `POST …/evaluation` → `claim_attempt_evaluation` → facts (`buildAttemptFacts`: deterministic correctness,
+recorded actions, verified capture from `payment_transactions`, fictional outcome) → one Gemini call → validation →
+`scoreScenario` (40/30/20/10, unchanged formula and `SCORING_VERSION`) → `record_attempt_evaluation`, which in one
+transaction stores the evaluation, applies FEEDBACK_READY → REVIEW_READY → RECOVERY_READY, and calls
+`complete_scenario_attempt` (immutable score, payment classification, module completion; replays never touch official
+results). Failure → `fail_attempt_evaluation`, attempt stays FINALIZED, retry or basic feedback. Evaluation never calls
+PayPal. The results page (`/play/[id]/results`) renders stored data only.
+
+### 19.6 Reliability, limits, and monitoring
+- Deadlines per category (classification 12s, personalization 20s, evaluation 35s); per-request timeout
+  `GEMINI_TIMEOUT_MS`; ≤2 retries for timeouts/network/429/5xx with exponential backoff + full jitter or the API's
+  `retryDelay`; invalid output retried once; 400/401/403/404 and daily-quota 429 not retried. SDK retries disabled.
+- In-process rate limiter: global `GEMINI_MAX_RPM` (default 12) and 24 logical calls per user per 10 minutes.
+- Duplicate protection: DB claims for personalization and evaluation, insert-once caches, unique indexes.
+- `src/lib/ai/usage.ts` counts requests, successes, retries, cache hits, tokens (SDK `usageMetadata`, thinking tokens
+  included), errors, rate-limit, invalid-output, and fallback events; no prompts, outputs, or personal data. Exposed at
+  `GET /api/dev/gemini-usage` in development; token counts are also stored per personalization/evaluation row.
+- Prompt injection: user text is fenced as `<untrusted>` data (closing tags stripped), system prompts forbid following
+  it, and every output is validated regardless.
+
+### 19.7 Security
+Every Gemini path runs behind an authenticated route and the attempt/profile ownership checks of the existing services;
+writes use the trusted writer with the session user id; all five new tables are RLS read-own with no browser writes;
+answer keys stay server-only (the client bundle was scanned: no key, prompt, or evidence ID). Before the migration is
+applied the app degrades (profile reads fall back to legacy columns; descriptions can't be saved; personalization falls
+back; evaluation reports a calm error).
