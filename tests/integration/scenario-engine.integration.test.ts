@@ -243,7 +243,8 @@ describe.skipIf(!ready)("scenario engine (database)", () => {
     for (const s of RESULTS_PIPELINE) expect((await step(attempt, s)).error).toBeNull();
     expect((await admin.rpc("complete_scenario_attempt", completeArgs(carolId, attempt))).error).toBeNull();
     const events =
-      (await carol.from("scenario_attempt_events").select("event_type").eq("attempt_id", attempt)).data ?? [];
+      (await carol.from("scenario_attempt_events").select("event_type").eq("attempt_id", attempt).order("id"))
+        .data ?? [];
     expect(events.at(-1)).toEqual({ event_type: "COMPLETE" });
   });
 
@@ -470,7 +471,7 @@ describe.skipIf(!appUp)(`scenario engine API (${APP})`, { timeout: 180_000 }, ()
     expect(foreign.text).not.toContain("You receive a message about your payment account");
   });
 
-  it("runs the laptop purchase to the pending PayPal Sandbox checkout without faking a payment", async () => {
+  it("runs the laptop purchase to the PayPal Sandbox checkout without faking a payment", async () => {
     // Finish Module 1 the way Steps 8–9 will (results pipeline + completion), so Module 2 unlocks.
     m1s2 = (await call(erin.jar, "POST", "/api/scenarios/m1-s2/attempts")).json.attemptId;
     await ev(m1s2, { type: "START" });
@@ -495,10 +496,13 @@ describe.skipIf(!appUp)(`scenario engine API (${APP})`, { timeout: 180_000 }, ()
     const pending = await call(erin.jar, "POST", `/api/attempts/${laptop}/justification`, { text: REASON });
     expect(pending.json.attempt).toMatchObject({
       state: "PAYMENT_PENDING",
-      checkout: { amountText: "$360.00", checkoutSequence: 1, integration: "pending" },
+      checkout: { amountText: "$360.00", checkoutSequence: 1, openOrder: null },
     });
     expect((await ev(laptop, { type: "FINALIZE" })).status).toBe(409); // can't skip the payment step
-    expect((await ev(laptop, { type: "PAYMENT_CANCELLED" })).json.attempt.state).toBe("PAYMENT_CANCELLED");
+    // Since Step 7, cancelling goes through the payment service (it checks PayPal first), not the events route.
+    expect((await ev(laptop, { type: "PAYMENT_CANCELLED" })).status).toBe(400);
+    const cancel = await call(erin.jar, "POST", `/api/attempts/${laptop}/checkout/cancel`);
+    expect(cancel.json.attempt.state).toBe("PAYMENT_CANCELLED");
     expect((await ev(laptop, { type: "RETRY_PAYMENT" })).json.attempt.checkout.checkoutSequence).toBe(2);
 
     // No money moved: Module 2's ledger is still just its opening entry.

@@ -1,6 +1,6 @@
 # ScamSense — Technical Architecture
 
-Status: updated for Phase 4 (Step 6: immersive scenario engine). Read together with `CLAUDE.md` (rules), `PRODUCT_SPEC.md` (behavior), and `DATA_MODEL.md`.
+Status: updated for Phase 5 (Step 7: genuine PayPal Sandbox checkout). Read together with `CLAUDE.md` (rules), `PRODUCT_SPEC.md` (behavior), and `DATA_MODEL.md`.
 
 ## 1. System overview
 
@@ -40,7 +40,7 @@ Status: updated for Phase 4 (Step 6: immersive scenario engine). Read together w
 | Supabase client | `@supabase/ssr` (cookie sessions) | Official App Router integration. |
 | Validation | Zod | Env, request bodies, content files, and AI output. |
 | AI | `@google/genai`, JSON-mode structured output | Official SDK. Model set by `GEMINI_MODEL`. |
-| Payments | `@paypal/react-paypal-js` (client) + server `fetch` to Orders v2 | Official SDK. No heavy server SDK needed. |
+| Payments | Official PayPal JavaScript SDK **v6** (`https://www.sandbox.paypal.com/web-sdk/v6/core`, loaded on the checkout step; client-ID auth) + server `fetch` to Orders v2 | PayPal's current recommended web integration (Step 7 review of developer.paypal.com). No npm dependency, no server SDK. |
 | PDF | `@react-pdf/renderer` (server, Node runtime) | Pure JS, works in route handlers, brand fonts embeddable. |
 | Email | Zapier Catch Hook → Email by Zapier / Gmail | Required. No email provider code in the app. |
 | Tests | Vitest (domain + content validation), Playwright (E2E) | Lightweight and standard. |
@@ -148,17 +148,20 @@ The error shape is `{ error: { code, message } }`.
 | Method & path | Body | Returns / effect |
 |---|---|---|
 | `POST /api/scenarios/[scenarioKey]/attempts` | — | `planScenarioStart` + `create_scenario_attempt`: 201 `{attemptId, kind: "new" \| "replay"}`, 200 `{kind: "resume"}`. 409 `module_locked` / `module_not_started`, 404 unknown |
-| `GET /api/attempts/[id]` | — | `{attempt: ClientAttemptView}` (`src/lib/scenario/view.ts`): state, intro line, token-filled render, recorded action IDs, pending/locked decision, own locked explanation, checkout details while a pay decision is in a payment state, `isPractice`. **Never the answer key.** Foreign/unknown → 404 |
-| `POST /api/attempts/[id]/events` | `{type}`: START · RECORD_ACTION{actionId} · SELECT_DECISION{decisionId} · CLEAR_DECISION · CONFIRM_DECISION · PAYMENT_CANCELLED · RETRY_PAYMENT · FINALIZE (strict) | Pure `transition()` decides, `apply_attempt_event` re-checks and records. Server-only events are rejected (400). Illegal → 409, unknown IDs → 400. Returns the new view |
+| `GET /api/attempts/[id]` | — | `{attempt: ClientAttemptView}` (`src/lib/scenario/view.ts`): state, intro line, token-filled render, recorded action IDs, pending/locked decision, own locked explanation, `checkout` while a pay decision is in a payment state (amount text, currency, fictional payee, sequence, `available`, `openOrder`, `lastClosed`), `payment` once a Sandbox capture is verified (amount, order id, capture id; never its spending/scam meaning), `isPractice`. **Never the answer key.** Foreign/unknown → 404 |
+| `POST /api/attempts/[id]/events` | `{type}`: START · RECORD_ACTION{actionId} · SELECT_DECISION{decisionId} · CLEAR_DECISION · CONFIRM_DECISION · RETRY_PAYMENT · FINALIZE (strict; PAYMENT_CANCELLED moved to `/checkout/cancel` in Step 7) | Pure `transition()` decides, `apply_attempt_event` re-checks and records. Server-only events are rejected (400). Illegal → 409, unknown IDs → 400. Returns the new view |
 | `POST /api/attempts/[id]/justification` | `{text}` (20–1000 after trimming) | Locks the explanation → `PAYMENT_PENDING` (pay) or `FINALIZED`. Returns the new view |
 | `GET /api/attempts/[id]/results` | — | *(Step 8–9)* Only when `COMPLETED` |
 
-### PayPal Sandbox
+### PayPal Sandbox checkout (Step 7, implemented; attempt-scoped so ownership is checked like every attempt route)
 | Method & path | Body | Effect |
 |---|---|---|
-| `POST /api/paypal/orders` | `{attemptId}` | Validates that the attempt is `PAYMENT_PENDING` with a payable locked decision (`buildCheckoutRequest`). **Server computes the amount and currency.** Creates an Orders v2 order (`intent: CAPTURE`) and stores a `payment_transactions` row → returns `{orderId}` |
-| `POST /api/paypal/orders/[orderId]/capture` | — | Captures the order. On a verified `COMPLETED` capture, atomically records it, debits the wallet (scored attempt only) and sends `PAYMENT_CAPTURED` → `PAYMENT_COMPLETED` → `FINALIZE` |
-| `POST /api/paypal/orders/[orderId]/cancel` | — | Marks the order cancelled → `PAYMENT_CANCELLED` (retry or finish without paying; the decision stays locked) |
+| `POST /api/attempts/[id]/checkout/order` | — | Requires `PAYMENT_PENDING` with a payable locked decision. **Server computes amount and currency.** Reuses the open order of this checkout or creates an Orders v2 order (`intent: CAPTURE`, `custom_id` = attempt id, idempotent `PayPal-Request-Id`) and stores it → `{orderId}`. 409 when not payable/already paid/cancelled, 422 unsupported currency, 503 PayPal unavailable |
+| `POST /api/attempts/[id]/checkout/capture` | `{orderId}` (strict, `^[A-Z0-9]{1,64}$`) | The order must be this attempt's own (else 404). Reads the order, captures an approved one once, verifies, and records: `{attempt, outcome: "captured" \| "pending" \| "failed"}`. 409 `not_approved` / `checkout_closed` |
+| `POST /api/attempts/[id]/checkout/sync` | — | Reconciliation after refresh/interruption/pending: same as capture for the open order; `awaiting_approval` when the buyer hasn't approved |
+| `POST /api/attempts/[id]/checkout/cancel` | — | Checks PayPal, then closes the open order (`CANCELLED`) → `PAYMENT_CANCELLED`; with no order, records the cancellation. Refuses to cancel an approved or processing payment |
+
+`PAYMENT_CANCELLED` is no longer accepted by `/events` (400): cancellations must go through the payment service.
 
 ### Completion, certificates, reports
 | Method & path | Effect |
@@ -219,8 +222,8 @@ INTRO ─START→ ACTIVE ⇄ INVESTIGATING (first investigate action; stays)
 ACTIVE/INVESTIGATING ─SELECT_DECISION→ DECISION_SELECTED ─CLEAR_DECISION→ back
 DECISION_SELECTED ─CONFIRM_DECISION (decision locked)→ EXPLANATION_REQUIRED
 EXPLANATION_REQUIRED ─SUBMIT_EXPLANATION (locked)→ PAYMENT_PENDING (pay) | FINALIZED (other)
-PAYMENT_PENDING ─PAYMENT_CAPTURED*→ PAYMENT_COMPLETED ─FINALIZE*→ FINALIZED
-PAYMENT_PENDING ─PAYMENT_CANCELLED / PAYMENT_FAILED*→ PAYMENT_CANCELLED ─RETRY_PAYMENT→ PAYMENT_PENDING
+PAYMENT_PENDING ─PAYMENT_CAPTURED*→ PAYMENT_COMPLETED ─FINALIZE*→ FINALIZED   (one DB transaction, Step 7)
+PAYMENT_PENDING ─PAYMENT_CANCELLED* / PAYMENT_FAILED*→ PAYMENT_CANCELLED ─RETRY_PAYMENT→ PAYMENT_PENDING
 PAYMENT_CANCELLED ─FINALIZE (finish without paying)→ FINALIZED
 FINALIZED ─FEEDBACK_READY*→ FEEDBACK_AVAILABLE ─REVIEW_READY*→ REVIEW_AVAILABLE ─RECOVERY_READY*→ RECOVERY_AVAILABLE
 RECOVERY_AVAILABLE ─COMPLETE* (complete_scenario_attempt only)→ COMPLETED            (* server-only events)
@@ -298,53 +301,75 @@ Case-insensitive keyword/phrase matching of the justification against each evide
 authored `fallbackFeedback[correct|incorrect]` and a fixed encouraging line instead of humor. The UI shows a subtle
 "Detailed AI feedback is unavailable right now" note.
 
-## 9. PayPal Sandbox transaction lifecycle
+## 9. PayPal Sandbox transaction lifecycle (Step 7, implemented)
 
-Safety guard: `paypal.ts` asserts `PAYPAL_ENV === "sandbox"` and `PAYPAL_API_BASE === "https://api-m.sandbox.paypal.com"`
-at module load. Otherwise it throws (R28). The JS SDK is loaded with the Sandbox client ID only.
+**Sandbox guards (R28, R31):** the env schema rejects `PAYPAL_ENV ≠ sandbox` and any `PAYPAL_API_BASE` other than
+`https://api-m.sandbox.paypal.com`; `src/instrumentation.ts` validates it when the server starts; `paypal.ts`
+re-asserts the Sandbox host when the client is built; the browser SDK URL is the constant
+`https://www.sandbox.paypal.com/web-sdk/v6/core`; and `payment_transactions.environment` is checked `= 'sandbox'`.
+
+**Layers:** `src/lib/payments/checkout.ts` (pure, unit-tested: checkout request, idempotency keys, PayPal amount
+strings, order parsing, `decideSettlement`, `verifyCapture`, wallet effect) → `paypal.ts` (server-only Orders v2
+client: OAuth client-credentials token cached until a minute before expiry, refreshed once on 401, 15s timeouts,
+`Prefer: return=representation`, operational logs without tokens or payer data) → `server.ts` (payment service) →
+routes `app/api/attempts/[attemptId]/checkout/*` → `CheckoutPanel` (official JS SDK v6 via `paypalSdk.ts`, no npm
+package). **Payable** = the render's authored `kind: "pay"` decisions (M2-S1 `pay_invoice`, M2-S2 `place_order`,
+M3-S1 `pay_fee`); M1-S1, M1-S2, and M3-S2 have none, so they never show a checkout.
 
 ```
-User clicks in-simulation "Pay" → confirms → writes and locks the explanation → PAYMENT_PENDING
-  │
-  ▼ PayPal Buttons createOrder()                              (contract: src/lib/payments/checkout.ts)
-POST /api/paypal/orders {attemptId}
-  • buildCheckoutRequest: attempt PAYMENT_PENDING & locked decision payable
-  • amount = round(module_run.starting_funds_minor × bp / 10000)  (currency = module_run.currency)
-  • OAuth client-credentials token (cached in memory until expiry)
-  • POST /v2/checkout/orders {intent: CAPTURE, purchase_units:[{amount, description:"ScamSense training (Sandbox)",
-    custom_id: attemptId}]}  with PayPal-Request-Id = checkoutIdempotencyKey(attemptId, checkoutSequence)
-  • insert payment_transactions(status=CREATED)
+Pay decision confirmed → explanation locked → PAYMENT_PENDING (checkout panel; PayPal button)
+  │ click: session.start({presentationMode:"auto"}, createOrderPromise)   ← popup opens inside the click
   ▼
-User approves in PayPal Sandbox popup (Sandbox personal test account)
-  ▼ onApprove()
-POST /api/paypal/orders/{orderId}/capture
-  • verify ownership + attempt PAYMENT_PENDING + order belongs to attempt
-  • POST /v2/checkout/orders/{id}/capture (idempotent request id)
-  • on capture status COMPLETED, verify amount & currency equal the stored values, then in ONE DB transaction:
-      payment_transactions → CAPTURED (capture_id, paypal_status)
-      scored attempt (attempt_number 1): wallet_ledger += PAYMENT debit (record_training_payment)
-      practice replay (attempt_number > 1): NO ledger entry; the capture stays on the practice
-        payment_transactions row only (official Training Funds untouched)
-      PAYMENT_CAPTURED → PAYMENT_COMPLETED, then FINALIZE → FINALIZED
-  • verifyCapture fails / DECLINED → FAILED; PAYMENT_FAILED → PAYMENT_CANCELLED (retry or finish without paying)
-onCancel() → POST .../cancel → CANCELLED; PAYMENT_CANCELLED
-onError()  → FAILED; friendly message; PAYMENT_CANCELLED
+POST /api/attempts/{id}/checkout/order                (no body; amount never comes from the browser)
+  • auth + owner (RLS) · buildCheckoutRequest: PAYMENT_PENDING, payable decision, enabled currency, amount > 0
+  • an open CREATED order for this checkout is reused (GET order: still awaiting approval) → same orderId
+  • else Orders v2 create {intent CAPTURE, custom_id = attemptId, amount = server value}
+    with PayPal-Request-Id = scamsense-{attemptId}-checkout-{sequence}
+  • record_payment_order(): re-derives sequence, amount (bp × run funds, half-up) and currency in SQL; checks
+    remaining Training Funds (scored), no open/captured order → payment_transactions CREATED
+  ▼
+Buyer approves in PayPal's own Sandbox window (Sandbox Personal account)
+  ▼ onApprove({orderId})  — not proof of payment
+POST /api/attempts/{id}/checkout/capture {orderId}     (the order must be this attempt's own row, else 404)
+  • GET order → decideSettlement:
+      APPROVED                → capture once (PayPal-Request-Id = {key}-capture); ORDER_ALREADY_CAPTURED → GET again
+      capture COMPLETED + exact amount/currency/order/custom_id → record_payment_capture() in ONE transaction:
+          row CAPTURED (capture id unique) · scored attempt: record_training_payment (idempotency key = request id)
+          · attempt PAYMENT_CAPTURED → PAYMENT_COMPLETED, FINALIZE → FINALIZED
+      capture PENDING         → row PENDING; attempt stays PAYMENT_PENDING; no wallet change ("Check again")
+      DECLINED/FAILED/VOIDED/422 decline/unverifiable → row FAILED → PAYMENT_FAILED → PAYMENT_CANCELLED
+      CREATED (not approved)  → 409 not_approved
+onCancel / "Cancel checkout" → POST …/checkout/cancel: GET order first; awaiting approval → row CANCELLED →
+  PAYMENT_CANCELLED; approved → refused (sync instead); captured → recorded as captured (a cancel never hides a payment)
+Page load with an open order / lost response → POST …/checkout/sync: same as capture, but "not approved" is a quiet
+  `awaiting_approval`. Network errors, timeouts, 5xx and 409 in-progress mean "unknown" → 503 "check again"; the next
+  sync reads the order again, so a verified capture that failed to save is recorded later, never charged twice.
+PAYMENT_CANCELLED → RETRY_PAYMENT (new sequence → new key → new order) or FINALIZE (finish without paying)
 ```
 
-`payment_transactions.status`: `CREATED → CAPTURED | CANCELLED | FAILED`. Captured Sandbox payments are never refunded
-by the app (no refund feature, R30). Scenario outcome text describes consequences only within the fiction.
+`payment_transactions.status`: `CREATED → CAPTURED | PENDING | CANCELLED | FAILED`, `PENDING → CAPTURED | CANCELLED |
+FAILED`; CANCELLED/FAILED are final, CAPTURED only gains its outcome classification once (trigger). Captured Sandbox
+payments are never refunded by the app (no refund feature, R30).
 
-**Replays (Step 5 review decision):** a replay is a full new attempt and may run a genuine Sandbox checkout again. The
-same flow applies with these differences: the order is created for the replay's own attempt ID and a fresh
-`request_id` (PayPal-Request-Id), so it can never collide with the original attempt's order; the amount is the same
-slot percentage of the original module run's starting funds (practice amount, same currency); on capture the
-`payment_transactions` row (`is_practice = true`) records the verified outcome but `record_training_payment` is not
-called (the database rejects replays with `replay_not_charged` as a backstop). Duplicate captures are prevented by
-the idempotent request id, the unique `paypal_order_id`/`paypal_capture_id`, at most one CAPTURED row per attempt, and
-the attempt state check (`PAYMENT_PENDING` only). `checkoutSequence` = 1 + the attempt's RETRY_PAYMENT events, so a
-new order (and key) exists only after the previous checkout was cancelled or failed. Cancelled or failed orders
-never count as payments. Step 6 ships `pendingIntegrationGateway`, which answers `integration_pending` to every call:
-nothing can fake a capture.
+**Training Funds vs Sandbox money.** The PayPal capture is a Sandbox transaction (test money) and its status is
+stored separately (`paypal_order_status`, `paypal_capture_status`, `status`). The fictional wallet effect is separate:
+a scored attempt's verified capture debits the official ledger once; a replay's never does. Whether that money was
+**ordinary spending** (M2-S2) or a **fictional scam loss** (M2-S1, M3-S1) is fixed by the answer key
+(`paymentOutcome`) but written only at completion (`complete_scenario_attempt` classifies the ledger entry and the
+payment row), because every table is readable by its owner and nothing may reveal legitimacy during play (R10). A
+completed Sandbox capture says nothing about PayPal judging fraud or Purchase Protection eligibility.
+
+**Idempotency and integrity (defence in depth):** PayPal-Request-Id per (attempt, checkout sequence) for create and a
+derived one for capture; GET-before-capture reconciliation; DB uniques on `request_id`, `paypal_order_id`,
+`paypal_capture_id`, (`attempt_id`, `checkout_sequence`), one CAPTURED and one open row per attempt; ledger unique per
+idempotency key and per attempt; row locks on attempt + run; `apply_attempt_event`'s expected-state check. A
+concurrent duplicate create that loses the race is answered with the stored order (PayPal may briefly return two
+Sandbox orders for one request id; only the stored one can ever be approved through ScamSense, the other expires).
+The UI also blocks repeated clicks, but nothing depends on that.
+
+**Replays:** the same flow on the replay's own attempt id, so the key, the order, and the capture are always new;
+`is_practice = true`; no ledger entry (`record_payment_capture` skips it and `record_training_payment` rejects
+replays as a backstop); classified at the replay's completion for its own debrief.
 
 **Currency:** The JS SDK `currency` parameter must equal the module run's currency. `src/lib/domain/currency.ts` is
 the single currency module for onboarding, dashboard, scenarios, wallet, checkout, impact calculations and reports.
@@ -371,8 +396,8 @@ Module unlocked → user presses "Start module N" (POST /api/modules/[key]/start
    └─ start_module_run(currency = profile.preferred_currency,
                        starting_funds_minor = calculateStartingFunds(income bracket) in minor units)
       wallet_ledger: MODULE_START  +starting_funds        (balance = starting funds)  ← R20 reset
-Scenario pay decision captured (Phase 5)
-      record_training_payment(amount = scenarioAmountMinor(slot %, starting funds), idempotency key)
+Scenario pay decision captured (Step 7: verified Sandbox capture, inside record_payment_capture)
+      record_training_payment(amount = scenarioAmountMinor(slot %, starting funds), idempotency key = PayPal-Request-Id)
       wallet_ledger: PAYMENT −amount, classification 'pending' (balance_after recorded)
 Attempt completed (Phase 6, complete_scenario_attempt)
       the attempt's PAYMENT is classified once: 'spending' (legitimate purchase) or 'fraud_loss' (scam)
@@ -381,7 +406,7 @@ Module completed (both scenarios' first attempts completed, same transaction)
 Next module
       new module_run with its own MODULE_START (fresh balance). Previous runs untouched
 Replay (practice attempt)
-      may run a real Sandbox checkout (Phase 5) recorded on payment_transactions (is_practice) only;
+      may run a real Sandbox checkout (Step 7) recorded on payment_transactions (is_practice) only;
       never charged to the ledger; the run (open or closed) is never touched
 ```
 

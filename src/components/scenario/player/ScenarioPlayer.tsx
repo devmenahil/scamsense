@@ -22,7 +22,6 @@ type ClientEvent =
   | { type: "SELECT_DECISION"; decisionId: string }
   | { type: "CLEAR_DECISION" }
   | { type: "CONFIRM_DECISION" }
-  | { type: "PAYMENT_CANCELLED" }
   | { type: "RETRY_PAYMENT" }
   | { type: "FINALIZE" };
 
@@ -36,7 +35,7 @@ const INTRO_ICON: Record<ClientAttemptView["render"]["interfaceType"], IconName>
 /**
  * Runs one scenario attempt against the server-side state machine (Step 6): neutral intro → explore the environment
  * (actions recorded as they happen) → environment-native decision → "final decision" confirmation → required written
- * explanation → PayPal Sandbox checkout boundary (pay decisions) → locked. Every step is persisted, so a refresh
+ * explanation → genuine PayPal Sandbox checkout (pay decisions, Step 7) → locked, ready for evaluation. Every step is persisted, so a refresh
  * resumes exactly where the player was. No hint, score, or judgment appears at any point (R10).
  */
 export function ScenarioPlayer({ initialView }: { initialView: ClientAttemptView }) {
@@ -227,7 +226,10 @@ export function ScenarioPlayer({ initialView }: { initialView: ClientAttemptView
         <CheckoutPanel
           view={view}
           busy={busy}
-          onCancel={() => void send({ type: "PAYMENT_CANCELLED" })}
+          onView={(v) => {
+            setView(v);
+            if (v.state !== view.state) window.scrollTo({ top: 0 });
+          }}
           onRetry={() => void send({ type: "RETRY_PAYMENT" })}
           onFinishWithoutPaying={() => setConfirmFinish(true)}
         />
@@ -245,6 +247,25 @@ export function ScenarioPlayer({ initialView }: { initialView: ClientAttemptView
             <Icon name="lock" className="mt-1 size-5 shrink-0" />
             {chosen.summary}
           </p>
+          {view.payment && (
+            <div className="mt-4 rounded-card border-2 border-teal p-4" role="status">
+              <p className="flex items-start gap-2 font-heading font-extrabold">
+                <Icon name="check" className="mt-0.5 size-5 shrink-0" />
+                PayPal Sandbox payment completed: {view.payment.amountText}
+              </p>
+              <dl className="mt-3 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-1 text-small">
+                <dt className="font-semibold">Capture ID</dt>
+                <dd className="break-all">{view.payment.captureId}</dd>
+                <dt className="font-semibold">Order ID</dt>
+                <dd className="break-all">{view.payment.orderId}</dd>
+              </dl>
+              <p className="mt-3 text-small">
+                {view.isPractice
+                  ? "Practice attempt: Sandbox test money only. Your official Training Funds didn't change."
+                  : `Sandbox test money only. ${view.payment.amountText} was deducted from your Training Funds.`}
+              </p>
+            </div>
+          )}
           {view.justification && (
             <div className="mt-4 rounded-card bg-mist p-4">
               <p className="label-eyebrow text-teal/80">Your reasoning</p>
@@ -255,7 +276,7 @@ export function ScenarioPlayer({ initialView }: { initialView: ClientAttemptView
             <Icon name="info" className="mt-0.5 size-4 shrink-0" />
             {view.state === "COMPLETED"
               ? "This attempt is complete."
-              : "Your feedback, Reveal the Red Flags, and Your Recovery Playbook for this attempt are added in a later build step. Nothing about this attempt can change now."}
+              : "Your decision is ready for evaluation. Feedback, Reveal the Red Flags, and Your Recovery Playbook for this attempt are added in a later build step. Nothing about this attempt can change now."}
           </p>
           <div className="mt-6 flex justify-center">
             <ButtonLink href={moduleHref} iconRight={<Icon name="arrow-right" className="size-5" />}>

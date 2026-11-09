@@ -165,18 +165,41 @@ templates. No Gemini and no PayPal API calls were added.
 - A foreign `/play/<id>` shows the not-found page with HTTP 200 (the `(app)` loading boundary streams); no attempt
   data is sent.
 
-## Phase 5 — PayPal Sandbox checkout + fictional wallet
-- [ ] `paypal.ts` (OAuth token cache, create order, capture, Sandbox guard, idempotency keys)
-- [ ] `/api/paypal/orders`, `/capture`, `/cancel` and the `record_capture` transaction
-- [ ] PayPal Buttons inside payable scenario environments (currency = module run currency)
-- [ ] Debit Training Funds on capture via `record_training_payment` (idempotency key = PayPal-Request-Id) for the
-      scored attempt only
-- [ ] Replays run a genuine Sandbox checkout too: own order + fresh request id per practice attempt,
-      `payment_transactions.is_practice`, no ledger entry, practice outcome classified at completion
-      (DATA_MODEL §3.5); test double-click/retry protection for both kinds
-- [ ] Before enabling any currency beyond USD: test it end to end with the Sandbox merchant, then flip `enabled` +
-      constraint migration (reference rates are already in place)
-- [ ] Failure, cancel, and retry paths. E2E with Sandbox test accounts
+## Phase 5 — PayPal Sandbox checkout + fictional wallet (Step 7) ✅ — automated checks pass; manual buyer approval: see notes
+- [x] Reviewed PayPal's current docs (developer.paypal.com/checkout/integrate, /sdk/js/set-up, Orders v2): JS SDK v6
+      with client-ID auth, server-side order creation and capture. No npm dependency added
+- [x] `src/lib/payments/checkout.ts` (pure rules + tests), `paypal.ts` (Orders v2 client: OAuth token cache, create,
+      capture, get, Sandbox guard, timeouts, idempotent request ids), `config.ts`, `server.ts` (payment service);
+      startup env validation in `src/instrumentation.ts`
+- [x] Migration `20261111090000_paypal_checkout.sql`: `payment_transactions`, `record_payment_order`,
+      `record_payment_capture` (CAPTURED + ledger + FINALIZED atomically), `update_payment_order`, classification at
+      completion; RLS read-own, service_role-only writes. Applied by the owner during Step 7
+- [x] Routes `POST /api/attempts/[id]/checkout/{order,capture,sync,cancel}`; PAYMENT_CANCELLED moved to the server
+- [x] Reusable `CheckoutPanel` with the official PayPal button (v6, Sandbox) inside the scenario flow; refresh-safe
+      reconciliation; cancel / failed / pending / unavailable states; payment confirmation on the locked card
+- [x] Connected M2-S2 (reference), M2-S1, M3-S1; M1-S1, M1-S2, M3-S2 intentionally have no checkout
+- [x] Debit Training Funds only on a verified capture via `record_training_payment` (idempotency key =
+      PayPal-Request-Id), scored attempt only; replays get their own Sandbox orders/captures (`is_practice`), no ledger
+- [x] Currency: USD verified with the Sandbox merchant; others stay disabled and are refused at checkout
+- [x] Tests: 190 unit tests (mocked PayPal responses for every settlement branch, client errors/timeouts/401 refresh,
+      no secrets in logs, migration drift); 59 live integration tests (15 new: DB money invariants, real Sandbox orders
+      read back from PayPal for M2-S2/M2-S1/M3-S1 and a replay, double-click reuse, cancel/retry, ownership, order
+      mismatch, non-payment scenarios); 15 real-browser checks in Chrome (PayPal v6 button renders, opens
+      www.sandbox.paypal.com, closing it cancels with no deduction, retry, 1280/768/360 px without horizontal scroll,
+      no judgment words, no console errors); production build; no secret in the client bundle
+- [ ] **Manual:** a Sandbox Personal buyer approves a real checkout (M2-S2 original + a replay) — see the Step 7 report
+
+**Phase 5 notes / limitations**
+- A successful capture can't be automated: approving needs a person logged into the Sandbox buyer account (a test card
+  could not approve orders on this Sandbox app). The capture → ledger → finalize path is covered at the database level
+  with synthetic capture ids and by mocked PayPal responses; the real end-to-end approval is the manual step above.
+- Captured Sandbox payments are not refunded (no refund feature). Abandoned unapproved orders simply expire at PayPal.
+- Until Step 8, a scored attempt that paid stops at FINALIZED; its payment stays classified `pending` (shown as
+  "awaiting results") until completion classifies it as spending or a scam loss.
+- PayPal may briefly return two different Sandbox orders for one request id under truly simultaneous requests; the
+  database keeps one and every caller gets that one. The other is never approvable through ScamSense.
+- No webhooks: capture is synchronous and `sync` reconciles. A capture left PENDING at PayPal is re-checked when the
+  player presses "Check again" or reloads.
 
 ## Phase 6 — Gemini integration with fallbacks
 - [ ] `gemini.ts` client with timeout/retry, Zod output parsing, versioned prompts

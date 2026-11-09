@@ -10,41 +10,36 @@ It uses PayPal **Sandbox** only. No real money ever moves.
 - Specification: [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) · Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
   · Data model: [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) · Build plan: [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
 
-## Current status: Phase 2 / Step 4 (accounts, profiles, onboarding)
+## Current status: Phase 5 / Step 7 (genuine PayPal Sandbox checkout)
 
 What works today:
 
-- **Accounts (Supabase Auth):** sign up (display name, email, password, optional age bracket, "I confirm that I am at
-  least 18 years old"), sign in, sign out, persistent sessions across refreshes and tabs, forgot/reset password, and
-  email-confirmation links.
-- **Three-step onboarding** saved to Supabase as you go. Refresh or sign out mid-way and you resume at the same step.
-- **My Profile:** view and edit every profile field. Changes persist.
-- **Protected routes:** signed-out visitors are sent to sign-in; new users are sent to onboarding. Each user can only
-  ever read or change their own profile, enforced by Row Level Security in the database.
-- **Currency: USD only** until each other currency is verified end to end with the configured PayPal Sandbox
-  merchant (`src/lib/domain/currency.ts`). Conversion from the USD baseline at fixed, documented ECB reference rates is
-  ready for when more are enabled (`src/content/exchangeRates.ts`).
-- **Module progression (Step 5):** three modules with two scenarios each (official titles and badges), unlocked in
-  order once both scenarios of the previous module are completed (no minimum score). Replays are full practice
-  attempts that never change official progress, scores, or Training Funds.
-- **Training Funds:** fictional, income-based USD baseline (US$3,000 default), reset at each module start, kept in an
-  append-only ledger (no duplicate deductions, no overdraft), spending kept separate from scam losses.
-- **Scoring framework:** deterministic 40/30/20/10 per scenario, stored immutably; no AI assessment is fabricated.
-- **Real dashboard, modules, and certificates pages.** The scenario player and results pages still show **clearly
-  labelled demonstration data**.
+- **Accounts, onboarding, My Profile (Step 4):** Supabase Auth sign-up/sign-in/reset, three-step onboarding saved as
+  you go, protected routes, Row Level Security on every table.
+- **Module progression and Training Funds (Step 5):** three modules × two scenarios, sequential unlocks, fictional
+  income-based Training Funds (US$3,000 default) in an append-only ledger, deterministic 40/30/20/10 scoring
+  framework. **Currency: USD only** (the only currency verified with the Sandbox merchant).
+- **Immersive scenario engine (Step 6):** all six scenarios are playable as realistic fictional apps (chat, mail,
+  browser, invoice, marketplace, seller hub); environment-native decisions, a written explanation for every decision,
+  a server-side state machine, refresh-safe resume, and practice replays.
+- **Genuine PayPal Sandbox checkout (Step 7):** pay decisions open the official PayPal JavaScript SDK v6 (Sandbox) for
+  the server-computed amount; the server creates the Orders v2 order, captures it, verifies the capture, and only
+  then records it. See [PayPal Sandbox checkout](#paypal-sandbox-checkout).
 
-Not built yet (by design): playable scenarios, Gemini, PayPal Sandbox checkout, Zapier email, PDF reports, and
-verified Recovery Playbook content.
+Not built yet (by design): Gemini feedback and personalization (Step 8), results / Reveal the Red Flags, badge and
+certificate records, Zapier email, PDF reports, verified Recovery Playbook content, Sensei Kenshi. Until Step 8, a
+finished scenario stops at "Your decision is ready for evaluation", so Module 2 can only be unlocked by the
+integration tests or a prepared test account.
 
-| Page                                                                         | Route                                                |
-| ---------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Landing                                                                      | `/`                                                  |
-| Sign up / Sign in / Forgot password                                          | `/sign-up`, `/sign-in`, `/forgot-password`           |
-| Onboarding                                                                   | `/onboarding`                                        |
-| Dashboard                                                                    | `/dashboard`                                         |
-| My Profile                                                                   | `/profile`                                           |
-| Modules, scenario player, results, certificates, Sensei Kenshi (demo shells) | `/modules`, `/play/demo`, `/certificates`, `/sensei` |
-| Your Recovery Playbook                                                       | `/playbook`                                          |
+| Page                                            | Route                                                 |
+| ----------------------------------------------- | ----------------------------------------------------- |
+| Landing                                         | `/`                                                   |
+| Sign up / Sign in / Forgot password             | `/sign-up`, `/sign-in`, `/forgot-password`            |
+| Onboarding                                      | `/onboarding`                                         |
+| Dashboard · Modules · Certificates · My Profile | `/dashboard`, `/modules`, `/certificates`, `/profile` |
+| Scenario player (incl. PayPal Sandbox checkout) | `/play/[attemptId]`                                   |
+| Results, Sensei Kenshi (design shells)          | `/play/demo/results`, `/sensei`                       |
+| Your Recovery Playbook                          | `/playbook`                                           |
 
 ## Getting started
 
@@ -80,6 +75,11 @@ gameplay writes.
      Training Funds ledger, scenario scores, RLS read-own policies, and the `service_role`-only gameplay functions.
    - `20261109140000_usd_only_currency.sql`: narrows the preferred-currency allowlist to USD (moves any other saved
      preference to USD; started modules keep their currency).
+   - `20261110090000_scenario_engine.sql`: the 13-state scenario machine, the append-only attempt event log, and
+     `apply_attempt_event`.
+   - `20261111090000_paypal_checkout.sql` (Step 7): `payment_transactions` (PayPal Sandbox orders and captures), the
+     `service_role`-only functions `record_payment_order`, `record_payment_capture`, `update_payment_order`, and the
+     updated `complete_scenario_attempt` (classifies a captured payment at completion).
 4. **Auth URLs.** Authentication → URL Configuration: Site URL `http://localhost:3000` (your deployed URL in
    production) and add `http://localhost:3000/auth/confirm` to Redirect URLs, so confirmation and reset links work.
 5. **Email confirmation.** Authentication → Sign In / Providers → Email → "Confirm email".
@@ -90,17 +90,83 @@ gameplay writes.
 6. **Test accounts.** Create them through `/sign-up`, not the dashboard's "Add user" button: the sign-up trigger
    rejects accounts without the "at least 18" confirmation metadata.
 
+## PayPal Sandbox checkout
+
+ScamSense only ever talks to the PayPal **Sandbox**. The server refuses to start if `PAYPAL_ENV` is not `sandbox` or
+`PAYPAL_API_BASE` is not `https://api-m.sandbox.paypal.com`, and the browser SDK URL is hard-coded to
+`https://www.sandbox.paypal.com/web-sdk/v6/core`. No real money moves.
+
+### Which scenarios pay
+
+| Scenario                           | Payment decision                              | Checkout           | Amount (US$3,000 funds) | Fictional wallet meaning (revealed only after completion) |
+| ---------------------------------- | --------------------------------------------- | ------------------ | ----------------------- | --------------------------------------------------------- |
+| M1-S1 The Security Check           | none (sharing a code is the risky choice)     | none               | —                       | —                                                         |
+| M1-S2 Your Account Needs Attention | none (phishing page, no payment in the story) | none               | —                       | —                                                         |
+| M2-S1 An Invoice Has Arrived       | "Pay invoice"                                 | **PayPal Sandbox** | 10% → $300.00           | scam loss                                                 |
+| M2-S2 The Laptop Purchase          | "Place order"                                 | **PayPal Sandbox** | 12% → $360.00           | ordinary spending                                         |
+| M3-S1 The Job Opportunity          | "Pay request" (equipment deposit)             | **PayPal Sandbox** | 15% → $450.00           | scam loss                                                 |
+| M3-S2 The Seller's Dilemma         | none (you are the seller: ship or not)        | none, by design    | —                       | —                                                         |
+
+### Setup (Sandbox Business merchant + Sandbox Personal buyer)
+
+1. Sign in at <https://developer.paypal.com> → **Apps & Credentials** → **Sandbox** → create (or open) a REST app. Its
+   Sandbox **Business** account is the merchant that receives every ScamSense payment.
+2. Copy the app's **Client ID** into `NEXT_PUBLIC_PAYPAL_CLIENT_ID` (public by design: the browser SDK needs it) and
+   its **Secret** into `PAYPAL_CLIENT_SECRET` (server only; never prefix it with `NEXT_PUBLIC_`). Keep
+   `PAYPAL_ENV=sandbox` and `PAYPAL_API_BASE=https://api-m.sandbox.paypal.com`.
+3. **Testing tools → Sandbox accounts:** use the default **Personal** account (or create one, country US). Its email
+   and system-generated password (⋯ → View/edit account) are what you type into the PayPal window during checkout.
+4. Apply `20261111090000_paypal_checkout.sql` in the Supabase SQL Editor and restart the server.
+
+If the client ID or secret is missing, the checkout step says "Sandbox checkout is unavailable right now" and the
+player can cancel and finish without paying. Nothing is faked.
+
+### How a payment works
+
+1. The player decides to pay inside the scenario, confirms, and writes their reasoning. Decision and explanation lock.
+2. The checkout step shows the server-computed amount and the official **Pay with PayPal** button.
+3. Clicking it calls `POST /api/attempts/[id]/checkout/order`: the server computes the amount from the module run,
+   creates an Orders v2 order (`PayPal-Request-Id` = `scamsense-<attempt>-checkout-<n>`), and stores it.
+4. The buyer approves in PayPal's own Sandbox window.
+5. `POST …/checkout/capture` reads the order, captures it once, and verifies that it is COMPLETED for exactly the
+   stored amount and currency, on this attempt's order. Then, in one database transaction: payment row CAPTURED, the
+   official Training Funds debit (scored attempt only, exactly once), attempt finalized.
+6. Closing PayPal or "Cancel checkout" calls `…/checkout/cancel`, which checks PayPal first. No payment is made; the
+   player can return to checkout (a new order) or finish without paying.
+7. After a refresh or a lost response, the page calls `…/checkout/sync`, which records whatever PayPal says actually
+   happened. It never captures a second time.
+
+**Replays** are full practice attempts: they get their own Sandbox orders and captures, recorded in
+`payment_transactions` with `is_practice = true`, and never touch the official Training Funds, score, progression,
+badges, or certificates.
+
+### Manual Sandbox checkout test
+
+Automated tests create and verify real Sandbox orders, but approving one needs a person signed in as the Sandbox
+buyer:
+
+1. `npm run build && npm start`, then sign in with a ScamSense account whose Module 2 is started (until Step 8 ships,
+   use a prepared test account: the integration helpers complete Module 1 through the trusted writer).
+2. Modules → Trust Under Pressure → **The Laptop Purchase** → look at the product, seller, reviews, and checkout →
+   **Place order** → confirm → write your reasoning → submit.
+3. Click **Pay with PayPal**, log in with the Sandbox **Personal** account, and approve.
+4. Expect "PayPal Sandbox payment completed: $360.00" with a capture ID, and Training Funds of $2,640.00 on the
+   dashboard (awaiting results). The payment also appears in the Sandbox Business account's activity at
+   <https://www.sandbox.paypal.com>.
+5. Optional checks: refresh while the PayPal window is open (the same order is reused); close the window (cancelled,
+   no deduction); replay the scenario once it is completed (a new Sandbox payment; official funds unchanged).
+
 ## Scripts
 
-| Command                       | Purpose                                                                                                                                                                                                                                                             |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`                 | Development server                                                                                                                                                                                                                                                  |
-| `npm run build` / `npm start` | Production build and server                                                                                                                                                                                                                                         |
-| `npm run lint`                | ESLint                                                                                                                                                                                                                                                              |
-| `npm run typecheck`           | TypeScript (`strict`)                                                                                                                                                                                                                                               |
-| `npm test`                    | Vitest unit tests (env guard, currency + money, training budget, wallet ledger, progression/unlocks/replays, scoring, profile/auth validation, route rules, migration ↔ code consistency, navigation)                                                               |
-| `npm run test:integration`    | **Live** tests against your Supabase project and a running app (`APP_URL`, default `http://localhost:3000`). Creates fictional `@example.com` accounts. Needs "Confirm email" off; the progression suite also needs both migrations and `SUPABASE_SERVICE_ROLE_KEY` |
-| `npm run format`              | Prettier (with Tailwind class sorting)                                                                                                                                                                                                                              |
+| Command                       | Purpose                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                 | Development server                                                                                                                                                                                                                                                                                                                    |
+| `npm run build` / `npm start` | Production build and server                                                                                                                                                                                                                                                                                                           |
+| `npm run lint`                | ESLint                                                                                                                                                                                                                                                                                                                                |
+| `npm run typecheck`           | TypeScript (`strict`)                                                                                                                                                                                                                                                                                                                 |
+| `npm test`                    | Vitest unit tests (env guard, currency + money, training budget, wallet ledger, progression/unlocks/replays, scoring, profile/auth validation, route rules, migration ↔ code consistency, navigation)                                                                                                                                 |
+| `npm run test:integration`    | **Live** tests against your Supabase project and a running app (`APP_URL`, default `http://localhost:3000`). Creates fictional `@example.com` accounts. Needs "Confirm email" off, every migration, and `SUPABASE_SERVICE_ROLE_KEY`; the PayPal suite also creates real (unapproved) Sandbox orders and needs the Sandbox credentials |
+| `npm run format`              | Prettier (with Tailwind class sorting)                                                                                                                                                                                                                                                                                                |
 
 ## Project layout
 
@@ -115,7 +181,9 @@ src/lib               env validation, navigation, formatting, demo data (shells 
 src/lib/supabase      Supabase SSR server client
 src/lib/auth          session helpers, route rules, auth schemas + error mapping
 src/lib/profile       profile schemas and DB mapping
-src/lib/domain        currency allowlist + money parsing (pure)
+src/lib/domain        pure rules: money, currency, Training Funds, wallet, progression, scoring, state machine
+src/lib/scenario      attempt service + client-safe view (no answer key)
+src/lib/payments      PayPal Sandbox: pure checkout rules, Orders v2 client, payment service
 src/middleware.ts     session refresh + route protection
 supabase/migrations   SQL migrations (run in the Supabase SQL Editor)
 tests/integration     live Supabase tests

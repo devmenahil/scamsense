@@ -1,10 +1,11 @@
 # ScamSense — Data Model
 
-Status: Phase 4 (Step 6). Supabase PostgreSQL. Implemented: `profiles`
+Status: Phase 5 (Step 7). Supabase PostgreSQL. Implemented: `profiles`
 (`20261109000000_profiles.sql`) and `module_runs`, `scenario_attempts`, `wallet_ledger_entries`, `scenario_scores`
 (`20261109120000_progression_wallet.sql`); currency allowlist narrowed to USD by `20261109140000_usd_only_currency.sql`
 (Step 5 review); Step 6 scenario engine in `20261110090000_scenario_engine.sql` (13 attempt states, event log,
-`apply_attempt_event`). The other tables are still design-only and arrive with the phases that
+`apply_attempt_event`); Step 7 PayPal Sandbox payments in `20261111090000_paypal_checkout.sql`
+(`payment_transactions` and its functions). The other tables are still design-only and arrive with the phases that
 need them (see IMPLEMENTATION_PLAN).
 
 ## 1. Principles
@@ -163,32 +164,36 @@ and verification actions per attempt (original and replays assessed independentl
 | `latency_ms` | int null | |
 | `created_at` | timestamptz | |
 
-### 3.5 `payment_transactions` (PayPal Sandbox only; design, created in Phase 5)
+### 3.5 `payment_transactions` (implemented, Step 7: PayPal **Sandbox** orders and captures)
+One row per PayPal Sandbox order created for an attempt: the scored attempt or a replay's own practice attempt.
+Migration `20261111090000_paypal_checkout.sql`.
+
 | Column | Type | Notes |
 |---|---|---|
-| `id` | uuid PK | |
-| `user_id` | uuid FK | |
-| `attempt_id` | uuid FK (composite with user_id) | the scored attempt **or** a replay's own practice attempt |
-| `is_practice` | boolean not null | copied from `scenario_attempts.is_replay`; practice payments never touch the ledger |
-| `decision_id` | text not null | the pay decision |
-| `environment` | text not null check (= `'sandbox'`) | R28 guard at DB level |
-| `paypal_order_id` | text unique not null | |
-| `paypal_capture_id` | text unique null | |
-| `request_id` | uuid unique not null | PayPal-Request-Id idempotency key; a fresh one per order (replays never reuse the original's) |
-| `amount_minor` | bigint not null | server-computed |
-| `currency` | char(3) not null | = module run currency |
-| `percent_bp` | int not null | basis points used to compute the amount |
-| `status` | text not null | `CREATED`,`CAPTURED`,`CANCELLED`,`FAILED` |
-| `paypal_status` | text null | raw status from PayPal |
-| `failure_code` | text null | |
-| `created_at`, `updated_at` | timestamptz | |
+| `id` | uuid PK | internal payment id |
+| `user_id`, `attempt_id`, `module_run_id` | composite FK → scenario_attempts (id, user_id, module_run_id), cascade | ownership; the row can't point at another user's attempt |
+| `scenario_key` | text | denormalized for reads |
+| `is_practice` | boolean | copied from `scenario_attempts.is_replay` (original vs replay) |
+| `decision_id` | text | the locked pay decision |
+| `checkout_sequence` | int ≥ 1 | 1 + the attempt's RETRY_PAYMENT events; unique with `attempt_id` |
+| `environment` | text, check `= 'sandbox'` | R28 guard at DB level |
+| `request_id` | text unique | PayPal-Request-Id of the create call = `scamsense-{attempt}-checkout-{sequence}`; also the ledger idempotency key |
+| `paypal_order_id` | text unique | |
+| `paypal_order_status` | text null | raw Orders v2 status (CREATED, APPROVED, COMPLETED, VOIDED, …) |
+| `paypal_capture_id` | text unique null | write-once |
+| `paypal_capture_status` | text null | raw capture status (COMPLETED, PENDING, DECLINED, …) |
+| `amount_minor`, `currency`, `percent_bp` | bigint > 0, ISO code, 1–10000 | **re-derived in SQL** from the module run and `scenario_payment_basis_points()` |
+| `status` | text | `CREATED` (awaiting approval) · `PENDING` (capture processing; not a payment) · `CAPTURED` (verified) · `CANCELLED` · `FAILED` |
+| `failure_code` | text null | e.g. `buyer_cancelled`, `capture_declined`, `instrument_declined`, `order_voided` |
+| `outcome_classification` | text null | fictional-wallet meaning: `pending` from capture, then `spending` / `fraud_loss` once at completion (practice too) |
+| `ledger_entry_id` | bigint null unique FK wallet_ledger_entries | the official debit; only for a scored attempt's CAPTURED row |
+| `captured_at`, `created_at`, `updated_at` | timestamptz | |
 
-| `outcome_classification` | text null | set at completion: `spending` or `fraud_loss` (practice payments are classified here; official ones also in the ledger) |
-| `ledger_entry_id` | bigint null FK wallet_ledger_entries | set only for the scored attempt's captured payment; always null for practice |
-
-Partial unique index: at most one `CAPTURED` row per attempt (so retries or double clicks cannot capture twice).
-Check: `is_practice` ⇒ `ledger_entry_id is null`. Cancelled/failed rows never produce a ledger entry or a
-"paid" outcome. Phase 5 will also extend `complete_scenario_attempt` to classify the practice payment row.
+Checks: CAPTURED ⇔ `captured_at`; CAPTURED ⇒ capture id + classification; not CAPTURED ⇒ no classification, no ledger
+link; `is_practice` ⇒ no ledger link; scored CAPTURED ⇒ ledger link. Partial uniques: one `CAPTURED` row per attempt,
+one open (`CREATED`/`PENDING`) row per attempt. Trigger: identity immutable, statuses only move forward, CANCELLED/FAILED
+final, a CAPTURED row only changes its classification (pending → spending/fraud_loss, once).
+RLS: owner SELECT only; no INSERT/UPDATE/DELETE grant for anyone (writes via the functions in §4).
 
 ### 3.6 `wallet_ledger_entries` (implemented: fictional Training Funds, append-only)
 | Column | Type | Notes |
@@ -208,7 +213,7 @@ Check: `is_practice` ⇒ `ledger_entry_id is null`. Cancelled/failed rows never 
 Partial unique indexes: one `MODULE_START` per run; one `PAYMENT` per attempt. Balance = `sum(amount_minor)` per
 module run, independent of any PayPal balance (R18). The only permitted update is classifying a pending payment once
 (trigger); there are no delete grants. Spending and fraud loss are reported separately.
-(A future `payment_transaction_id` link arrives with `payment_transactions` in Phase 5.)
+The link to the PayPal payment is `payment_transactions.ledger_entry_id` (Step 7).
 
 ### 3.7 `badges` (Phase 9; until then a badge is derived from `module_runs.completed_at`)
 | `id` uuid PK · `user_id` · `module_run_id` unique · `module_key` · `awarded_at` |
@@ -257,8 +262,21 @@ verified session. Errors are SQLSTATE `P0001` with stable messages (`module_lock
    (Step 6): locks the row, requires `state = from_state` (`attempt_state_conflict`), rejects COMPLETED, enforces the
    event cap, applies the event's fields (pending/confirmed decision, explanation, finalized_at), updates the state
    (trigger checks legality: `invalid_state_transition`) and appends the event, atomically.
-6. *(Phase 5)* `record_capture(...)`: marks the payment transaction CAPTURED and calls the ledger debit above.
-7. *(Phase 9)* badge + certificate rows at module completion.
+6. *(Step 7)* `record_payment_order(user, attempt, request_id, order_id, order_status, amount_minor, currency)`:
+   idempotent per request id (same row; a different order for it → `payment_order_mismatch`); locks the attempt and run;
+   requires PAYMENT_PENDING; checks the request id matches the current checkout sequence, the amount equals
+   bp × starting funds (half-up), the currency is the run's, no captured/open order exists, and (scored) the funds
+   cover it (`insufficient_funds`).
+7. *(Step 7)* `record_payment_capture(user, payment, capture_id, capture_status, order_status, amount_minor,
+   currency)`: requires a COMPLETED capture of exactly the stored amount/currency and an open row; in one transaction
+   marks CAPTURED, calls `record_training_payment` for a scored attempt (idempotency key = request id), and applies
+   PAYMENT_CAPTURED → PAYMENT_COMPLETED and FINALIZE → FINALIZED. Same capture id again → unchanged row; different →
+   `capture_mismatch`.
+8. *(Step 7)* `update_payment_order(user, payment, status PENDING|CANCELLED|FAILED, …)`: PENDING keeps the attempt
+   waiting; CANCELLED/FAILED close the row and move a PAYMENT_PENDING attempt to PAYMENT_CANCELLED
+   (PAYMENT_CANCELLED / PAYMENT_FAILED event). Repeats are idempotent.
+   `complete_scenario_attempt` (replaced in place) also classifies the attempt's CAPTURED payment row.
+9. *(Phase 9)* badge + certificate rows at module completion.
 
 ## 5. Static content types (TypeScript, validated by Zod)
 ```ts

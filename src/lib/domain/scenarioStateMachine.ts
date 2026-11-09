@@ -35,7 +35,8 @@
  *     PAYMENT_COMPLETED. Cancelling never counts as paying, and nothing here can fake a successful payment.
  *   • Nothing about correctness is involved: this machine never needs the answer key (R10, R13).
  *   • Events are split by who may send them. The browser can only send CLIENT_EVENTS; the server-only events are
- *     reserved for the PayPal capture flow (Step 7) and the evaluation/results pipeline (Steps 8–9).
+ *     reserved for the PayPal Sandbox payment service (Step 7: captured / failed / cancelled, recorded atomically
+ *     with the payment) and the evaluation/results pipeline (Steps 8–9).
  */
 
 export const SCENARIO_STATES = [
@@ -84,11 +85,15 @@ export const CLIENT_EVENT_TYPES = [
   "CLEAR_DECISION",
   "CONFIRM_DECISION",
   "SUBMIT_EXPLANATION",
-  "PAYMENT_CANCELLED",
   "RETRY_PAYMENT",
   "FINALIZE",
 ] as const;
+/**
+ * Server-only events. Since Step 7, PAYMENT_CANCELLED is also server-only: a cancellation goes through the payment
+ * service, which first confirms with PayPal that nothing was approved or captured.
+ */
 export const SERVER_EVENT_TYPES = [
+  "PAYMENT_CANCELLED",
   "PAYMENT_CAPTURED",
   "PAYMENT_FAILED",
   "FEEDBACK_READY",

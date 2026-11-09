@@ -52,6 +52,34 @@ export interface TrustedWriterDatabase {
         p_amount_minor: number;
         p_idempotency_key: string;
       }>;
+      /** Step 7 (supabase/migrations/20261111090000_paypal_checkout.sql): PayPal Sandbox orders and captures. */
+      record_payment_order: Fn<{
+        p_user_id: string;
+        p_attempt_id: string;
+        p_request_id: string;
+        p_paypal_order_id: string;
+        p_paypal_order_status: string;
+        p_amount_minor: number;
+        p_currency: string;
+      }>;
+      record_payment_capture: Fn<{
+        p_user_id: string;
+        p_payment_id: string;
+        p_paypal_capture_id: string;
+        p_paypal_capture_status: string;
+        p_paypal_order_status: string;
+        p_amount_minor: number;
+        p_currency: string;
+      }>;
+      update_payment_order: Fn<{
+        p_user_id: string;
+        p_payment_id: string;
+        p_status: "PENDING" | "CANCELLED" | "FAILED";
+        p_paypal_order_status: string | null;
+        p_paypal_capture_id: string | null;
+        p_paypal_capture_status: string | null;
+        p_failure_code: string | null;
+      }>;
       complete_scenario_attempt: Fn<{
         p_user_id: string;
         p_attempt_id: string;

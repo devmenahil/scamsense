@@ -8,7 +8,8 @@ type Context = { params: Promise<{ attemptId: string }> };
 
 /**
  * Events the BROWSER may send. Server-only events (PAYMENT_CAPTURED, PAYMENT_FAILED, FEEDBACK_READY, …) are not
- * accepted here: only the Step 7 capture flow and the Step 8–9 results pipeline can produce them. The explanation
+ * accepted here (nor, since Step 7, PAYMENT_CANCELLED: cancelling goes through /checkout/cancel, which checks with
+ * PayPal first): only the Step 7 payment service and the Step 8–9 results pipeline can produce them. The explanation
  * has its own route (/justification). Unknown keys are rejected (`strict`).
  */
 const clientEventSchema = z.discriminatedUnion("type", [
@@ -17,7 +18,6 @@ const clientEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("SELECT_DECISION"), decisionId: idSchema }).strict(),
   z.object({ type: z.literal("CLEAR_DECISION") }).strict(),
   z.object({ type: z.literal("CONFIRM_DECISION") }).strict(),
-  z.object({ type: z.literal("PAYMENT_CANCELLED") }).strict(),
   z.object({ type: z.literal("RETRY_PAYMENT") }).strict(),
   z.object({ type: z.literal("FINALIZE") }).strict(),
 ]);

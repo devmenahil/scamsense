@@ -1,6 +1,6 @@
 # ScamSense — Product Specification
 
-Status: updated for Phase 4 (Step 6: immersive scenario engine, six authored scenarios). This is the functional source of truth. It must stay consistent with the
+Status: updated for Phase 5 (Step 7: genuine PayPal Sandbox checkout). This is the functional source of truth. It must stay consistent with the
 **ScamSense Product Experience — Non-Negotiable Rules** in `CLAUDE.md`, including both the core principles and the
 detailed rules. Rule references such as (R10) point to that section.
 
@@ -122,10 +122,15 @@ activity/context tags; slot keys, titles, and amounts never move.
    you that the payment had been received?"), 20–1,000 characters, reviews it, and submits. Decision and explanation
    are now locked. **Decision change (Step 6):** the explanation now comes **before** any payment.
 6. **Pay (only for a pay decision, R12).** A genuine PayPal **Sandbox** checkout runs for the server-calculated
-   amount (Step 7; until then the checkout step says the Sandbox connection is pending and no payment is made). If
-   the user cancels or the payment fails, nothing is paid and the Training Funds are untouched; the user can return to
-   checkout or finish without paying (the attempt is then finalized as "pay decision, no payment made"). The decision
-   and explanation stay locked either way.
+   amount: the official PayPal button (JavaScript SDK v6, Sandbox) opens PayPal's own window, the buyer approves with
+   a Sandbox Personal account, and the server captures and verifies the payment before anything is recorded (Step 7).
+   The ScamSense Sandbox merchant receives the test money; the fictional payee appears only in the scenario. If the
+   user cancels, closes PayPal, or the payment is declined, nothing is paid and the Training Funds are untouched; the
+   user can return to checkout (a new order) or finish without paying (the attempt is then finalized as "pay
+   decision, no payment made"). A capture PayPal still reports as pending is not counted until it completes. The
+   decision and explanation stay locked either way. After a verified payment the player sees the Sandbox amount,
+   capture ID and order ID, and (scored attempt) the Training Funds deduction; the attempt waits for evaluation
+   (Step 8). Payment-enabled scenarios: M2-S1, M2-S2, M3-S1 (§3.3).
 7. **Feedback** (Step 8, after the attempt is finalized). This shows:
    - Decision outcome (deterministic: whether the decision matches the answer key).
    - Fictional wallet impact (deterministic).
@@ -209,9 +214,13 @@ there is no evaluator, so no score is produced outside tests. XP levels and stre
   (idempotent, no duplicate deductions, never below zero). The balance is always the sum of the entries.
 - Payments are recorded as "awaiting results" during play (nothing reveals legitimacy, R10) and classified at
   completion as **ordinary spending** or **lost to a scam**. The two are always reported separately.
-- When the user pays in a scenario:
+- When the user pays in a scenario (Step 7):
   - A PayPal Sandbox order is created and captured for that amount (a Sandbox test account; no real money).
-  - The fictional wallet is debited by the same amount, independently of any PayPal balance (R18).
+  - Only after the server verifies a COMPLETED capture of exactly that amount is the fictional wallet debited by the
+    same amount, once, independently of any PayPal balance (R18). Cancelled, declined, failed, or still-pending
+    payments never change the Training Funds.
+  - PayPal payment status and the fictional spending/scam-loss meaning are stored separately. A completed Sandbox
+    capture never means PayPal judged anything to be fraud or eligible for Purchase Protection.
 - What the payment is "worth" in the debrief is deterministic and authored. In a scam scenario the money is lost in the
   story. In the legitimate scenario the user receives the item, so the payment is a successful purchase. The UI never
   claims real-world refund outcomes (R30).
@@ -293,7 +302,7 @@ Training Funds strip sits at the top and the cards stack.
 | Gemini (evaluation) | Deterministic evidence matching plus authored explanations, with a neutral fallback comment instead of humor |
 | Gemini (chat) | Friendly fallback message with links |
 | Zapier | Certificate stays visible on screen, and the email can be retried |
-| PayPal Sandbox | The payment step shows "Sandbox checkout unavailable." The user can retry or finish without paying (the decision stays locked). No payment is faked as a PayPal transaction. |
+| PayPal Sandbox | The payment step shows "Sandbox checkout unavailable" (missing credentials) or "couldn't confirm with PayPal yet, check again" (outage or lost response). The user can cancel, retry, or finish without paying (the decision stays locked). Checking again reads the order and never charges twice. No payment is faked as a PayPal transaction. |
 
 ## 11. Out of scope (MVP)
 Live PayPal payments, real account linking, scanning real messages, leaderboards, social features, XP levels and
@@ -309,8 +318,9 @@ non-U.S. recovery policies, multiple languages, and admin CMS.
    story has no payment simply never uses its amount.
 4. The six scenario storylines are authored (§3.3); owner review pending.
 5. ~~Budget in other currencies~~ Resolved: USD baseline converted at fixed reference rates (§5.1).
-6. Which additional PayPal currencies to enable once the Sandbox merchant is tested (Phase 5 / Step 7). Currently
-   enabled: **USD only**. Candidates with reference rates ready: AUD, CAD, EUR, GBP and others the ECB publishes.
+6. Which additional PayPal currencies to enable. Step 7 verified **USD** end to end with the Sandbox merchant (real
+   orders created and read back); no other currency has been tested, so **USD remains the only enabled currency** and
+   checkout refuses any other (`unsupported_currency`). Candidates with reference rates ready: AUD, CAD, EUR, GBP.
 7. ~~Title-to-storyline pairing~~ Implemented as in §3.3 (Step 6 brief).
 8. M3-S2 uses the fictional TandemPay wallet for the buyer's claimed payment instead of naming PayPal inside the fake
    confirmation, because simulated fraudulent interfaces must use fictional organisations and must not imitate
@@ -320,3 +330,5 @@ non-U.S. recovery policies, multiple languages, and admin CMS.
 10. "Finish without paying" after a cancelled checkout finalizes a pay decision with no payment. Step 8 must decide
    how that scores (currently: the decision counts as chosen; no ledger entry).
 11. No MVP scenario targets the "investments" or "sending invoices" activities; routing falls back for them.
+12. (Step 7) In PayPal's window the buyer sees the ScamSense Sandbox merchant, not the fictional payee (real PayPal UI
+   must not impersonate a fictional or real third party). The checkout panel says so. Confirm this is acceptable.

@@ -22,7 +22,14 @@ import { loadProgressSnapshot } from "@/lib/progress/server";
 import type { Profile } from "@/lib/profile/schema";
 import { getTrustedWriter, TrustedWriterNotConfiguredError } from "@/lib/supabase/admin";
 import type { SupabaseServerClient } from "@/lib/supabase/server";
-import { buildClientView, type AttemptData, type AttemptEventData, type ClientAttemptView } from "./view";
+import { isPayPalConfigured } from "@/lib/payments/config";
+import {
+  buildClientView,
+  type AttemptData,
+  type AttemptEventData,
+  type AttemptPaymentData,
+  type ClientAttemptView,
+} from "./view";
 
 const ATTEMPT_SELECT =
   "id, user_id, module_run_id, scenario_key, attempt_number, is_replay, state, pending_decision_id, decision_id, justification";
@@ -44,6 +51,41 @@ export interface LoadedAttempt {
   attempt: AttemptData;
   events: AttemptEventData[];
   run: { currency: string; startingFundsMinor: number };
+  /** The attempt's PayPal Sandbox orders (Step 7), oldest first. */
+  payments: AttemptPaymentData[];
+}
+
+const PAYMENT_SELECT =
+  "id, request_id, paypal_order_id, checkout_sequence, status, amount_minor, currency, paypal_capture_id, captured_at, failure_code";
+
+interface PaymentRow {
+  id: string;
+  request_id: string;
+  paypal_order_id: string;
+  checkout_sequence: number;
+  status: AttemptPaymentData["status"];
+  amount_minor: number | string;
+  currency: string;
+  paypal_capture_id: string | null;
+  captured_at: string | null;
+  failure_code: string | null;
+}
+
+export function toPaymentData(r: PaymentRow): AttemptPaymentData {
+  const amountMinor = Number(r.amount_minor);
+  if (!Number.isSafeInteger(amountMinor)) throw new Error("Unexpected payment amount");
+  return {
+    id: r.id,
+    requestId: r.request_id,
+    orderId: r.paypal_order_id,
+    checkoutSequence: r.checkout_sequence,
+    status: r.status,
+    amountMinor,
+    currency: r.currency,
+    captureId: r.paypal_capture_id,
+    capturedAt: r.captured_at,
+    failureCode: r.failure_code,
+  };
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -123,7 +165,7 @@ export async function loadAttempt(
   attemptId: string,
 ): Promise<LoadedAttempt> {
   if (!UUID.test(attemptId)) throw new ApiError(404, "not_found", "We couldn't find that scenario attempt.");
-  const [attempt, events] = await Promise.all([
+  const [attempt, events, payments] = await Promise.all([
     supabase
       .from("scenario_attempts")
       .select(`${ATTEMPT_SELECT}, module_runs!scenario_attempts_run_fk(currency, starting_funds_minor)`)
@@ -139,9 +181,17 @@ export async function loadAttempt(
       .eq("user_id", userId)
       .order("id", { ascending: true })
       .returns<{ event_type: string; action_id: string | null }[]>(),
+    supabase
+      .from("payment_transactions")
+      .select(PAYMENT_SELECT)
+      .eq("attempt_id", attemptId)
+      .eq("user_id", userId)
+      .order("checkout_sequence", { ascending: true })
+      .returns<PaymentRow[]>(),
   ]);
   if (attempt.error) throw dbError(attempt.error, "Scenarios");
   if (events.error) throw dbError(events.error, "Scenarios");
+  if (payments.error) throw dbError(payments.error, "Payments");
   const row = attempt.data;
   if (!row || !row.module_runs)
     throw new ApiError(404, "not_found", "We couldn't find that scenario attempt.");
@@ -151,11 +201,12 @@ export async function loadAttempt(
     attempt: toAttemptData(row),
     events: (events.data ?? []).map((e) => ({ eventType: e.event_type, actionId: e.action_id })),
     run: { currency: row.module_runs.currency, startingFundsMinor: funds },
+    payments: (payments.data ?? []).map(toPaymentData),
   };
 }
 
 export function viewFor(loaded: LoadedAttempt, displayName: string | null): ClientAttemptView {
-  return buildClientView({ ...loaded, displayName });
+  return buildClientView({ ...loaded, displayName, paymentsAvailable: isPayPalConfigured() });
 }
 
 /**

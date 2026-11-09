@@ -3,7 +3,7 @@ import { SCENARIO_KEYS, type ScenarioKey } from "@/content/modules";
 import { SCENARIO_TEMPLATES } from "@/content/scenarios/templates.server";
 import type { ScenarioState } from "@/lib/domain/scenarioStateMachine";
 import { scenarioAmountMinor } from "@/lib/domain/trainingFunds";
-import { buildClientView, type AttemptData } from "./view";
+import { buildClientView, type AttemptData, type AttemptPaymentData } from "./view";
 import { firstNameFrom, shareOfMinor } from "./tokens";
 
 const run = { currency: "USD", startingFundsMinor: 300_000 };
@@ -109,7 +109,7 @@ describe("client attempt view", () => {
       ],
     );
     expect(v.recordedActionIds).toEqual(["view_product", "read_reviews"]);
-    expect(v.checkout).toMatchObject({ amountText: "$360.00", checkoutSequence: 2, integration: "pending" });
+    expect(v.checkout).toMatchObject({ amountText: "$360.00", checkoutSequence: 2, currency: "USD" });
   });
 
   it("shows checkout details only for a pay decision in a payment state", () => {
@@ -154,5 +154,61 @@ describe("client attempt view", () => {
     expect(firstNameFrom("  Sam   Lee ")).toBe("Sam");
     expect(firstNameFrom("{{amount}}")).toBe("amount");
     expect(firstNameFrom("")).toBe("there");
+  });
+
+  it("reports the open order, the last closed checkout, and a verified payment — never its scam/legit meaning", () => {
+    const pay = (over: Partial<AttemptPaymentData>): AttemptPaymentData => ({
+      id: "p1",
+      requestId: "scamsense-x-checkout-1",
+      orderId: "ORDER1",
+      checkoutSequence: 1,
+      status: "CREATED",
+      amountMinor: 36_000,
+      currency: "USD",
+      captureId: null,
+      capturedAt: null,
+      failureCode: null,
+      ...over,
+    });
+    const locked = { decisionId: "place_order", justification: "x".repeat(25) };
+    const build = (state: ScenarioState, payments: AttemptPaymentData[], available = true) =>
+      buildClientView({
+        attempt: attempt("m2-s2", { state, ...locked }),
+        events: [],
+        run,
+        displayName: "Alex",
+        payments,
+        paymentsAvailable: available,
+      });
+
+    const open = build("PAYMENT_PENDING", [pay({})]);
+    expect(open.checkout).toMatchObject({
+      available: true,
+      openOrder: { orderId: "ORDER1", status: "CREATED" },
+    });
+    expect(open.payment).toBeNull();
+    expect(build("PAYMENT_PENDING", [], false).checkout).toMatchObject({ available: false, openOrder: null });
+    expect(build("PAYMENT_CANCELLED", [pay({ status: "FAILED" })]).checkout?.lastClosed).toBe("FAILED");
+
+    const paid = build("FINALIZED", [
+      pay({ status: "CANCELLED" }),
+      pay({
+        id: "p2",
+        orderId: "ORDER2",
+        status: "CAPTURED",
+        captureId: "CAP2",
+        capturedAt: "2026-11-11T10:00:00Z",
+      }),
+    ]);
+    expect(paid.checkout).toBeNull();
+    expect(paid.payment).toEqual({
+      amountText: "$360.00",
+      orderId: "ORDER2",
+      captureId: "CAP2",
+      capturedAt: "2026-11-11T10:00:00Z",
+    });
+    const json = JSON.stringify(paid);
+    for (const secret of ["spending", "fraud_loss", "fraudulent", "legitimate"])
+      expect(json).not.toContain(secret);
   });
 });

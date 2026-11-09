@@ -33,6 +33,20 @@ export interface AttemptEventData {
   actionId: string | null;
 }
 
+/** One PayPal Sandbox order of this attempt (payment_transactions, read through RLS). */
+export interface AttemptPaymentData {
+  id: string;
+  requestId: string;
+  orderId: string;
+  checkoutSequence: number;
+  status: "CREATED" | "PENDING" | "CAPTURED" | "CANCELLED" | "FAILED";
+  amountMinor: number;
+  currency: string;
+  captureId: string | null;
+  capturedAt: string | null;
+  failureCode: string | null;
+}
+
 export interface ClientAttemptView {
   attemptId: string;
   scenarioKey: ScenarioKey;
@@ -53,11 +67,23 @@ export interface ClientAttemptView {
   /** Present only while a pay decision's checkout is pending, cancelled, or completed. */
   checkout: {
     amountText: string;
+    currency: string;
     payee: string;
     description: string;
     checkoutSequence: number;
-    /** Step 6: the Sandbox integration is not connected yet (Step 7). */
-    integration: "pending";
+    /** False when the server has no PayPal Sandbox credentials: the UI says checkout is unavailable. */
+    available: boolean;
+    /** The order of the current checkout that is awaiting approval (CREATED) or still processing (PENDING). */
+    openOrder: { orderId: string; status: "CREATED" | "PENDING" } | null;
+    /** How the most recent closed checkout ended, for an accurate message after a refresh. */
+    lastClosed: "CANCELLED" | "FAILED" | null;
+  } | null;
+  /** The verified Sandbox payment of this attempt (PayPal status only; never its scam/legit meaning, R10). */
+  payment: {
+    amountText: string;
+    orderId: string;
+    captureId: string;
+    capturedAt: string;
   } | null;
 }
 
@@ -80,6 +106,10 @@ export function buildClientView(input: {
   events: readonly AttemptEventData[];
   run: { currency: string; startingFundsMinor: number };
   displayName: string | null;
+  /** This attempt's PayPal Sandbox orders, oldest first. */
+  payments?: readonly AttemptPaymentData[];
+  /** Whether PayPal Sandbox credentials are configured on the server. */
+  paymentsAvailable?: boolean;
   /** Personalization slot values; Step 6 uses the authored defaults. */
   slots?: Record<string, string>;
 }): ClientAttemptView {
@@ -104,6 +134,10 @@ export function buildClientView(input: {
     (attempt.state === "PAYMENT_PENDING" ||
       attempt.state === "PAYMENT_CANCELLED" ||
       attempt.state === "PAYMENT_COMPLETED");
+  const payments = input.payments ?? [];
+  const open = payments.find((p) => p.status === "CREATED" || p.status === "PENDING");
+  const closed = [...payments].reverse().find((p) => p.status === "CANCELLED" || p.status === "FAILED");
+  const captured = payments.find((p) => p.status === "CAPTURED");
 
   return {
     attemptId: attempt.id,
@@ -124,10 +158,22 @@ export function buildClientView(input: {
       inCheckout && render.checkout
         ? {
             amountText: formatMoney(amountMinor, run.currency),
+            currency: run.currency,
             payee: render.checkout.payee,
             description: render.checkout.description,
             checkoutSequence: checkoutSequence(input.events),
-            integration: "pending",
+            available: input.paymentsAvailable ?? false,
+            openOrder: open ? { orderId: open.orderId, status: open.status as "CREATED" | "PENDING" } : null,
+            lastClosed: closed ? (closed.status as "CANCELLED" | "FAILED") : null,
+          }
+        : null,
+    payment:
+      captured && captured.captureId && captured.capturedAt
+        ? {
+            amountText: formatMoney(captured.amountMinor, captured.currency),
+            orderId: captured.orderId,
+            captureId: captured.captureId,
+            capturedAt: captured.capturedAt,
           }
         : null,
   };
