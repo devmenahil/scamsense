@@ -1,23 +1,41 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { DEMO_ATTEMPT_ID, DEMO_SCENARIOS } from "@/lib/demo/demoData";
-import { ScenarioPlayerShell } from "@/components/scenario/ScenarioPlayerShell";
+import { ApiError } from "@/lib/api/server";
+import { getCurrentUser, requireOnboardedProfile } from "@/lib/auth/session";
+import { loadAttempt, viewFor } from "@/lib/scenario/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { ScenarioPlayer } from "@/components/scenario/player/ScenarioPlayer";
+import { ProfileUnavailable } from "@/components/profile/ProfileUnavailable";
+import { ProgressUnavailable } from "@/components/dashboard/ProgressUnavailable";
 
 export const metadata: Metadata = { title: "Scenario" };
+// Per-user, per-attempt page: always rendered on request.
+export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ attemptId: string }> };
 
-/** Phase 1: only the demonstration attempt exists. Real attempts are loaded via GET /api/attempts/[id] in Phase 4. */
+/**
+ * The immersive scenario player for one of the user's own attempts. The page renders the client-safe view only
+ * (no answer key, R10); everything after this goes through /api/attempts/[id]/*. Another user's attempt is a 404.
+ */
 export default async function PlayPage({ params }: Props) {
   const { attemptId } = await params;
-  if (attemptId !== DEMO_ATTEMPT_ID) notFound();
-  const scenario = DEMO_SCENARIOS["spot-the-trap"][1]!;
-  return (
-    <ScenarioPlayerShell
-      attemptId={attemptId}
-      introLine={scenario.introLine}
-      moduleHref="/modules/spot-the-trap"
-      context={`Spot the Trap · ${scenario.label} (demo)`}
-    />
-  );
+  const profile = await requireOnboardedProfile(`/play/${attemptId}`);
+  if (profile.status !== "ok") return <ProfileUnavailable reason={profile.status} />;
+  const user = await getCurrentUser();
+  if (!user) notFound();
+
+  let view;
+  try {
+    const supabase = await createSupabaseServerClient();
+    view = viewFor(await loadAttempt(supabase, user.id, attemptId), profile.profile.displayName);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) notFound();
+    return (
+      <div className="container-page py-8 sm:py-12">
+        <ProgressUnavailable href={`/play/${attemptId}`} />
+      </div>
+    );
+  }
+  return <ScenarioPlayer initialView={view} />;
 }

@@ -35,6 +35,17 @@ export interface TrustedWriterDatabase {
         p_starting_funds_minor: number;
       }>;
       create_scenario_attempt: Fn<{ p_user_id: string; p_scenario_key: string; p_content_version: string }>;
+      /** Step 6: the only way to change an attempt's state (supabase/migrations/20261110090000_scenario_engine.sql). */
+      apply_attempt_event: Fn<{
+        p_user_id: string;
+        p_attempt_id: string;
+        p_from_state: string;
+        p_to_state: string;
+        p_event_type: string;
+        p_action_id: string | null;
+        p_decision_id: string | null;
+        p_justification: string | null;
+      }>;
       record_training_payment: Fn<{
         p_user_id: string;
         p_attempt_id: string;

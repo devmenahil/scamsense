@@ -1,6 +1,6 @@
 # ScamSense — Technical Architecture
 
-Status: updated for Phase 3 (Step 5). Read together with `CLAUDE.md` (rules), `PRODUCT_SPEC.md` (behavior), and `DATA_MODEL.md`.
+Status: updated for Phase 4 (Step 6: immersive scenario engine). Read together with `CLAUDE.md` (rules), `PRODUCT_SPEC.md` (behavior), and `DATA_MODEL.md`.
 
 ## 1. System overview
 
@@ -103,7 +103,7 @@ Route groups: `(marketing)` public, `(auth)` sign-in/up, `(app)` authenticated a
 | `/onboarding` | Auth, not onboarded | Three steps; steps 1–2 saved as you go; resumes at the first incomplete step (R3, R4) |
 | `/dashboard` | App | Real progress (Phase 3): current module, overall progress, Training Funds, score, badges, modules, goal, certificate/report access, past results |
 | `/modules/[moduleKey]` | App | Module overview: locked notice, or "Start module N" (opens the Training Funds period), scenario slot statuses, Training Funds card + ledger history |
-| `/play/[attemptId]` | App, owner | **Immersive scenario**: intro → explore → decide → (pay) → justify |
+| `/play/[attemptId]` | App, owner | **Immersive scenario** (`ScenarioPlayer`): intro → explore → decide → confirm → explain → (Sandbox checkout) → locked. Client-safe view only; a foreign attempt shows the not-found page |
 | `/play/[attemptId]/results` | App, owner, attempt COMPLETED | Feedback, wallet impact, AI comment, **Reveal the Red Flags** |
 | `/modules/[moduleKey]/complete` | App, module completed | Badge, certificate preview, email form, report download |
 | `/playbook` (+ `/playbook/[section]`) | Public | Your Recovery Playbook (R21) |
@@ -144,22 +144,21 @@ The error shape is `{ error: { code, message } }`.
 | `GET /api/progress` | — | `{progress}`: the `ProgressSnapshot` (module lock states, scenario statuses with start/resume/replay actions, current Training Funds or next-module preview, per-module ledger + summary, scores, badge dates). Read through RLS. 403 until onboarded |
 | `POST /api/modules/[moduleKey]/start` | — (no body) | Opens the module's Training Funds period: server computes currency + amount from the saved profile, checks the unlock, calls `start_module_run`. 201 new, 200 already started (idempotent), 409 locked, 404 unknown |
 
-### Scenario attempts
+### Scenario attempts (Step 6, implemented)
 | Method & path | Body | Returns / effect |
 |---|---|---|
-| `POST /api/scenarios/[scenarioKey]/attempts` | — | *(Phase 4)* Creates a first attempt or a replay, or returns the open one (`planScenarioStart` + `create_scenario_attempt`). The module must already be started. Runs personalization (Gemini or fallback) and returns `{attemptId}` |
-| `GET /api/attempts/[id]` | — | Client-safe view: state, intro line, personalized **render** data, decision options, payable amount (if any). **Never the answer key** |
-| `POST /api/attempts/[id]/events` | `{type: "START" \| "DECISION_SELECTED" \| "DECISION_CLEARED"}` | Applies a state-machine transition (§7) |
-| `POST /api/attempts/[id]/decision` | `{decisionId}` | Commits a non-payment decision → `AWAITING_JUSTIFICATION`. Pay decisions are rejected here: they commit only via capture |
-| `POST /api/attempts/[id]/justification` | `{text}` (20–1000 chars) | Locks justification → `EVALUATING`, runs evaluation synchronously (timeout → fallback), then `COMPLETED`. Returns `{status}` |
-| `GET /api/attempts/[id]/results` | — | Only when `COMPLETED`: decision outcome, wallet impact, evaluation, safest next step, full evidence list with classifications for Reveal mode |
+| `POST /api/scenarios/[scenarioKey]/attempts` | — | `planScenarioStart` + `create_scenario_attempt`: 201 `{attemptId, kind: "new" \| "replay"}`, 200 `{kind: "resume"}`. 409 `module_locked` / `module_not_started`, 404 unknown |
+| `GET /api/attempts/[id]` | — | `{attempt: ClientAttemptView}` (`src/lib/scenario/view.ts`): state, intro line, token-filled render, recorded action IDs, pending/locked decision, own locked explanation, checkout details while a pay decision is in a payment state, `isPractice`. **Never the answer key.** Foreign/unknown → 404 |
+| `POST /api/attempts/[id]/events` | `{type}`: START · RECORD_ACTION{actionId} · SELECT_DECISION{decisionId} · CLEAR_DECISION · CONFIRM_DECISION · PAYMENT_CANCELLED · RETRY_PAYMENT · FINALIZE (strict) | Pure `transition()` decides, `apply_attempt_event` re-checks and records. Server-only events are rejected (400). Illegal → 409, unknown IDs → 400. Returns the new view |
+| `POST /api/attempts/[id]/justification` | `{text}` (20–1000 after trimming) | Locks the explanation → `PAYMENT_PENDING` (pay) or `FINALIZED`. Returns the new view |
+| `GET /api/attempts/[id]/results` | — | *(Step 8–9)* Only when `COMPLETED` |
 
 ### PayPal Sandbox
 | Method & path | Body | Effect |
 |---|---|---|
-| `POST /api/paypal/orders` | `{attemptId, decisionId}` | Validates that the attempt state allows payment and that the decision is payable. **Server computes the amount and currency.** Creates an Orders v2 order (`intent: CAPTURE`) and stores a `payment_transactions` row → returns `{orderId}` |
-| `POST /api/paypal/orders/[orderId]/capture` | — | Captures the order. On `COMPLETED`, atomically records the capture, debits the wallet, and commits the pay decision → `AWAITING_JUSTIFICATION` |
-| `POST /api/paypal/orders/[orderId]/cancel` | — | Marks the order as cancelled (user closed the popup) → attempt returns to `EXPLORING` |
+| `POST /api/paypal/orders` | `{attemptId}` | Validates that the attempt is `PAYMENT_PENDING` with a payable locked decision (`buildCheckoutRequest`). **Server computes the amount and currency.** Creates an Orders v2 order (`intent: CAPTURE`) and stores a `payment_transactions` row → returns `{orderId}` |
+| `POST /api/paypal/orders/[orderId]/capture` | — | Captures the order. On a verified `COMPLETED` capture, atomically records it, debits the wallet (scored attempt only) and sends `PAYMENT_CAPTURED` → `PAYMENT_COMPLETED` → `FINALIZE` |
+| `POST /api/paypal/orders/[orderId]/cancel` | — | Marks the order cancelled → `PAYMENT_CANCELLED` (retry or finish without paying; the decision stays locked) |
 
 ### Completion, certificates, reports
 | Method & path | Effect |
@@ -174,75 +173,64 @@ The error shape is `{ error: { code, message } }`.
 | `POST /api/chat` | `{message, contextAttemptId?}` | Builds a grounded prompt (§8.3) and calls Gemini (streamed text response). Stores messages. Falls back on failure. Rate-limited per user |
 | `GET /api/chat/history` | — | Recent messages |
 
-## 6. Scenario content model
+## 6. Scenario content model (Step 6, implemented)
 
-Content is typed TypeScript data validated by Zod schemas in tests. Each scenario is split into two files so the
-answer key cannot leak by accident:
+Content is typed TypeScript validated by Zod at import time and in tests. Each scenario is split so the answer key
+cannot leak by accident:
 
-**`render.ts` (client-safe)**
-- `key`, `moduleKey`, `contentVersion`, `introLine` (neutral, R9)
-- `environment`: a tree of typed screens (email list/message, chat thread, fake browser page with address bar,
-  invoice, marketplace listing, payment request). Elements that may be evidence carry a stable `anchorId`. Anchors are
-  neutral identifiers (e.g., `email.sender`, `page.url`) and are rendered as `data-anchor` attributes with **no
-  styling difference**.
-- `personalizationSlots`: named text slots with authored defaults and constraints (max length, purpose), e.g.,
-  `buyerName`, `itemName`, `employerName`, `amountContext`.
-- `decisions`: `[{id, kind: "pay" | "other", trigger}]`, where `trigger` binds each decision to an **environment-native
-  action** (a button or control inside the simulated tool, such as an invoice "Pay now", a seller dashboard "Ship
-  item", or a chat "Block & report"). Decisions are never shown as a multiple-choice list. Labels are neutral.
+**`src/content/scenarios/<key>/render.ts` (client-safe, schema `schema.ts`)**
+- `scenarioKey`, `contentVersion`, `interfaceType` (`chat_email` · `web_browser` · `invoice` · `marketplace`),
+  neutral `introLine` (R9), `startAppId`.
+- `apps`: the simulated device's apps, each a typed environment: `messages` (threads with controlled `branches`),
+  `mail` (messages, links with a status line, document attachments → invoice viewer), `browser` (pages of typed
+  site blocks, bookmarks, inspectable address), `wallet` (fictional TandemPay), `marketplace` (products, sellers,
+  seller chat, checkout), `seller_hub` (listings, orders, buyer chat).
+- `anchor` / `*Anchor`: stable, **neutral** element IDs rendered as `data-sim-anchor` with no styling difference.
+  Evidence targets them; far more elements carry anchors than are evidence. Tests forbid judging words in any ID
+  sent to the browser.
+- `actions` (`investigate` | `interact`, optional `requires` for controlled branching) and `decisions` (`pay` |
+  `other`, an `intent` that picks the explanation prompt, `requires`). Every action and decision is placed on a
+  control in the environment (validated).
+- Text tokens filled on the server: `{{amount}}`, `{{amount.<part>}}`, `{{amount.minus.<part>}}`, `{{playerName}}`,
+  personalization `slots` (authored defaults; Gemini in Step 8).
 
-**`answer-key.server.ts` (server-only)**
-- `correctDecisionIds` (one or more acceptable), plus per-decision outcome text
-- `legitimacy`: `"scam" | "legitimate"`
-- `evidence`: `[{id, anchorId, classification: "red_flag" | "verify" | "positive", title, explanation, keywords[],
-  weight}]`
-- `payable`: `{decisionId → percentOfModuleFunds}` (basis points, integer)
-- `safestNextStep`, `keyLessons[]`, `playbookLinks[]`, `fallbackFeedback` texts
+**`src/content/scenarios/<key>/answerKey.server.ts` (`import "server-only"`, schema `templateSchema.ts`)**
+- `fixedScamStatus`, `fixedCorrectDecisionRules`, `evidenceDefinitions` (evidenceId, targetElementId, evidenceType
+  red_flag | worth_verifying | positive_verification_evidence, title, explanation, educationalImportance,
+  associatedCorrectDecisionRules, weight, keywords), verification action weights, `unsafeActionIds`,
+  `payableDecisionIds`, `paymentOutcome`, `recoveryPolicyIds`, `fallbackContent`.
+- Routing metadata for Step 8: `primaryCategory`, `secondaryCategoryTags`, `activityTags`, `contextTags` (shared
+  vocabularies, with profile mappings `PROFILE_ACTIVITY_TAGS` / `PROFILE_CONTEXT_TAG`), difficulty
+  (recommendedExperienceLevel, interactionComplexity, numberOfDecisionPoints), `evidenceReferences` (empty: no
+  invented sources or statistics). Age is never a routing input.
 
-Content tests assert: every `anchorId` exists in render; render text contains no judgment words from a deny-list (e.g.,
-"scam", "suspicious", "red flag", "fake", "warning"), except where those words are part of the fiction itself and
-are explicitly allowed; all fraudulent domains use reserved TLDs (`.example`, `.test`, `.invalid`); and ≥1 scenario
-across the catalogue is `legitimate` (R17).
+`templates.server.ts` assembles the full `ScenarioTemplate` (every field in the Step 6 brief §5, derived lists
+included) and cross-checks the answer key against the render. Routing may only consider the scenarios of an
+unlocked, started module (`planScenarioStart` refuses locked modules).
 
-## 7. Scenario state machine
+## 7. Scenario state machine (Step 6)
 
-Implemented as a pure reducer in `src/lib/domain/stateMachine.ts`, persisted in `scenario_attempts.state`, and
-re-validated on every API call. Illegal transitions return `409`.
+Pure reducer `src/lib/domain/scenarioStateMachine.ts`; the database repeats the legal (from → to) list in a trigger
+(`scenario_state_transition_allowed`) and `apply_attempt_event` is the only writer (row lock + expected-state check
+→ 409 on a stale or double request).
 
 ```
-              START                     DECISION_SELECTED(non-pay)
- INTRO ───────────────▶ EXPLORING ───────────────────────────▶ AWAITING_JUSTIFICATION
-                          ▲   │                                         │
-       PAYMENT_CANCELLED/ │   │ DECISION_SELECTED(pay)                   │ JUSTIFICATION_SUBMITTED
-       PAYMENT_FAILED     │   ▼                                         ▼
-                        PAYMENT_PENDING ── PAYMENT_CAPTURED ──▶ (AWAITING_JUSTIFICATION)
-                                                                        │
-                                                                   EVALUATING
-                                                                        │ EVALUATION_DONE (AI or fallback)
-                                                                        ▼
-                                                                    COMPLETED ──▶ (results + Reveal unlocked)
+INTRO ─START→ ACTIVE ⇄ INVESTIGATING (first investigate action; stays)
+ACTIVE/INVESTIGATING ─SELECT_DECISION→ DECISION_SELECTED ─CLEAR_DECISION→ back
+DECISION_SELECTED ─CONFIRM_DECISION (decision locked)→ EXPLANATION_REQUIRED
+EXPLANATION_REQUIRED ─SUBMIT_EXPLANATION (locked)→ PAYMENT_PENDING (pay) | FINALIZED (other)
+PAYMENT_PENDING ─PAYMENT_CAPTURED*→ PAYMENT_COMPLETED ─FINALIZE*→ FINALIZED
+PAYMENT_PENDING ─PAYMENT_CANCELLED / PAYMENT_FAILED*→ PAYMENT_CANCELLED ─RETRY_PAYMENT→ PAYMENT_PENDING
+PAYMENT_CANCELLED ─FINALIZE (finish without paying)→ FINALIZED
+FINALIZED ─FEEDBACK_READY*→ FEEDBACK_AVAILABLE ─REVIEW_READY*→ REVIEW_AVAILABLE ─RECOVERY_READY*→ RECOVERY_AVAILABLE
+RECOVERY_AVAILABLE ─COMPLETE* (complete_scenario_attempt only)→ COMPLETED            (* server-only events)
 ```
 
-| State | Meaning | Client may see | Allowed events |
-|---|---|---|---|
-| `INTRO` | Attempt created, neutral intro shown | intro line | `START` |
-| `EXPLORING` | User interacting with the environment | render data, decision options | `DECISION_SELECTED` |
-| `PAYMENT_PENDING` | Pay decision chosen, Sandbox order created | + amount/currency | `PAYMENT_CAPTURED`, `PAYMENT_CANCELLED`, `PAYMENT_FAILED` |
-| `AWAITING_JUSTIFICATION` | Decision committed and locked | + chosen decision | `JUSTIFICATION_SUBMITTED` |
-| `EVALUATING` | Justification locked, evaluation running | "Reviewing your reasoning…" | `EVALUATION_DONE` |
-| `COMPLETED` | Final | results + evidence (Reveal) | — |
-
-Invariants:
-- Decision and justification are immutable once committed (R11).
-- A pay decision is committed **only** by a successful Sandbox capture (R12). Cancelling or failing returns the user to
-  `EXPLORING`, and the wallet is untouched.
-- `EVALUATING` always reaches `COMPLETED`. Evaluation retries Gemini once and then uses the deterministic fallback.
-  A stuck `EVALUATING` attempt is re-evaluated idempotently on the next `GET`.
-- Nothing from the answer key is serialized for any state except `COMPLETED` (R10, R15).
-- Module progression is recomputed from `COMPLETED` attempts. It is never stored as a counter that could drift.
-- Replays (Phase 3 decision): a completed scenario can be played again as a new attempt (`attempt_number` + 1,
-  `is_replay`). Only attempt 1 is scored for progression, totals, and the ledger; at most one unfinished attempt per
-  scenario exists at a time (partial unique index), so "start" on an unfinished scenario always resumes.
+Invariants: decision write-once from CONFIRM, explanation write-once from SUBMIT (trigger); nothing from the answer
+key is serialized before COMPLETED; a payment counts only after a verified capture; every accepted event is logged
+in `scenario_attempt_events` (each action once), which also restores the environment (chosen branches, revealed
+threads) after a refresh. Progression counts COMPLETED only. Replays (`attempt_number > 1`) run the same machine on
+their own row and log.
 
 ## 8. Deterministic rules vs. Gemini-generated content
 
@@ -316,16 +304,16 @@ Safety guard: `paypal.ts` asserts `PAYPAL_ENV === "sandbox"` and `PAYPAL_API_BAS
 at module load. Otherwise it throws (R28). The JS SDK is loaded with the Sandbox client ID only.
 
 ```
-User clicks in-simulation "Pay" → selects pay decision
+User clicks in-simulation "Pay" → confirms → writes and locks the explanation → PAYMENT_PENDING
   │
-  ▼ PayPal Buttons createOrder()
-POST /api/paypal/orders {attemptId, decisionId}
-  • verify attempt EXPLORING & decision payable
+  ▼ PayPal Buttons createOrder()                              (contract: src/lib/payments/checkout.ts)
+POST /api/paypal/orders {attemptId}
+  • buildCheckoutRequest: attempt PAYMENT_PENDING & locked decision payable
   • amount = round(module_run.starting_funds_minor × bp / 10000)  (currency = module_run.currency)
   • OAuth client-credentials token (cached in memory until expiry)
   • POST /v2/checkout/orders {intent: CAPTURE, purchase_units:[{amount, description:"ScamSense training (Sandbox)",
-    custom_id: attemptId}]}  with PayPal-Request-Id = idempotency key
-  • insert payment_transactions(status=CREATED); attempt → PAYMENT_PENDING
+    custom_id: attemptId}]}  with PayPal-Request-Id = checkoutIdempotencyKey(attemptId, checkoutSequence)
+  • insert payment_transactions(status=CREATED)
   ▼
 User approves in PayPal Sandbox popup (Sandbox personal test account)
   ▼ onApprove()
@@ -337,10 +325,10 @@ POST /api/paypal/orders/{orderId}/capture
       scored attempt (attempt_number 1): wallet_ledger += PAYMENT debit (record_training_payment)
       practice replay (attempt_number > 1): NO ledger entry; the capture stays on the practice
         payment_transactions row only (official Training Funds untouched)
-      attempt.decision = pay decision; state → AWAITING_JUSTIFICATION
-  • on DECLINED/other → FAILED; attempt → EXPLORING (user may retry or decide otherwise)
-onCancel() → POST .../cancel → CANCELLED; attempt → EXPLORING
-onError()  → FAILED; friendly message; attempt → EXPLORING
+      PAYMENT_CAPTURED → PAYMENT_COMPLETED, then FINALIZE → FINALIZED
+  • verifyCapture fails / DECLINED → FAILED; PAYMENT_FAILED → PAYMENT_CANCELLED (retry or finish without paying)
+onCancel() → POST .../cancel → CANCELLED; PAYMENT_CANCELLED
+onError()  → FAILED; friendly message; PAYMENT_CANCELLED
 ```
 
 `payment_transactions.status`: `CREATED → CAPTURED | CANCELLED | FAILED`. Captured Sandbox payments are never refunded
@@ -353,7 +341,10 @@ slot percentage of the original module run's starting funds (practice amount, sa
 `payment_transactions` row (`is_practice = true`) records the verified outcome but `record_training_payment` is not
 called (the database rejects replays with `replay_not_charged` as a backstop). Duplicate captures are prevented by
 the idempotent request id, the unique `paypal_order_id`/`paypal_capture_id`, at most one CAPTURED row per attempt, and
-the attempt state check (`PAYMENT_PENDING` only). Cancelled or failed orders never count as payments.
+the attempt state check (`PAYMENT_PENDING` only). `checkoutSequence` = 1 + the attempt's RETRY_PAYMENT events, so a
+new order (and key) exists only after the previous checkout was cancelled or failed. Cancelled or failed orders
+never count as payments. Step 6 ships `pendingIntegrationGateway`, which answers `integration_pending` to every call:
+nothing can fake a capture.
 
 **Currency:** The JS SDK `currency` parameter must equal the module run's currency. `src/lib/domain/currency.ts` is
 the single currency module for onboarding, dashboard, scenarios, wallet, checkout, impact calculations and reports.
@@ -517,3 +508,19 @@ Replay (practice attempt)
   idempotency key and per attempt; scores are unique per attempt and immutable (no UPDATE grant for anyone), so a
   repeat call can never add or overwrite points.
 - Replays (practice attempts) cannot change official scores, progression, badges, the module run, or the ledger.
+
+## 18. Immersive scenario engine (Phase 4 / Step 6)
+
+- **Layers:** content (`src/content/scenarios/`) → pure domain (`scenarioStateMachine.ts`) → view/tokens
+  (`src/lib/scenario/view.ts`, `tokens.ts`, pure) → service (`src/lib/scenario/server.ts`, server-only: RLS reads,
+  trusted-writer RPCs) → routes → `ScenarioPlayer` + `src/components/scenario/sim/*`.
+- **Environments:** `Workspace` hosts the apps (left dock at ≥1024px, an equal-width tab strip below; apps stay
+  mounted so each keeps its place). Apps call `record(actionId)` (optimistic, queued in order, server-confirmed) and
+  `decide(decisionId)`; they never call the API and never know what is correct.
+- **No hints (R10):** identical styling for every element; neutral anchors; the explanation prompt depends only on
+  the chosen intent; content tests deny judgment words in player-facing text and IDs; view tests check the
+  serialized payload; the client bundle contains no scenario content (it arrives through the attempt view).
+- **Safety (R28–R34):** `.example` domains only, fictional 555-01xx numbers, no input fields inside simulations,
+  fictional TandemPay instead of any PayPal look-alike.
+- **Performance:** an event request is three sequential round trips (auth, [profile ‖ attempt+run+events], RPC); the
+  RPC returns the updated row, so the view is rebuilt without a second read.

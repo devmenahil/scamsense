@@ -10,20 +10,15 @@
  *   • At most one open (unfinished) attempt per scenario: the user resumes it instead of starting another.
  */
 import { MODULES, type ModuleDefinition, type ModuleKey, type ScenarioKey } from "@/content/modules";
+import { SCENARIO_STATES, type ScenarioState } from "./scenarioStateMachine";
 
 export type ModuleStatus = "locked" | "available" | "in_progress" | "completed";
 export type ScenarioStatus = "locked" | "not_started" | "in_progress" | "completed";
 export type ScenarioAction = "locked" | "start" | "resume" | "replay" | "resume_replay";
 
-export const ATTEMPT_STATES = [
-  "INTRO",
-  "EXPLORING",
-  "PAYMENT_PENDING",
-  "AWAITING_JUSTIFICATION",
-  "EVALUATING",
-  "COMPLETED",
-] as const;
-export type AttemptState = (typeof ATTEMPT_STATES)[number];
+/** Attempt states (Step 6 state machine, `scenarioStateMachine.ts`). Only COMPLETED counts for progression. */
+export const ATTEMPT_STATES = SCENARIO_STATES;
+export type AttemptState = ScenarioState;
 
 export interface AttemptRecord {
   id: string;

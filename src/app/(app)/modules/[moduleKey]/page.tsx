@@ -7,6 +7,7 @@ import { calculateStartingFunds } from "@/lib/domain/trainingFunds";
 import { getCurrentProgress } from "@/lib/progress/current";
 import { ProgressUnavailable } from "@/components/dashboard/ProgressUnavailable";
 import { StartModuleButton } from "@/components/dashboard/StartModuleButton";
+import { StartScenarioButton } from "@/components/dashboard/StartScenarioButton";
 import { StatusLabel } from "@/components/dashboard/StatusLabel";
 import { LedgerHistory, money, TrainingFundsCard } from "@/components/dashboard/TrainingFunds";
 import { ProfileUnavailable } from "@/components/profile/ProfileUnavailable";
@@ -129,16 +130,14 @@ export default async function ModuleOverviewPage({ params }: Props) {
             <p className="mt-1 text-small text-teal/85">Play them in either order.</p>
             <ul className="mt-4 grid gap-5 md:grid-cols-2">
               {progress.scenarios.map((s) => (
-                <ScenarioSlotCard key={s.key} slot={s} started={progress.started} />
+                <ScenarioSlotCard
+                  key={s.key}
+                  slot={s}
+                  started={progress.started}
+                  primary={s.key === progress.scenarios.find((x) => x.status !== "completed")?.key}
+                />
               ))}
             </ul>
-            <p className="mt-4 text-small">
-              Want a feel for it first?{" "}
-              <Link href="/play/demo" className="font-semibold underline decoration-2 underline-offset-4">
-                Preview the scenario player with demonstration content
-              </Link>
-              .
-            </p>
           </section>
 
           <Card tone="white" as="section" className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -190,13 +189,23 @@ export default async function ModuleOverviewPage({ params }: Props) {
   );
 }
 
-function ScenarioSlotCard({ slot, started }: { slot: ScenarioProgress; started: boolean }) {
+function ScenarioSlotCard({
+  slot,
+  started,
+  primary,
+}: {
+  slot: ScenarioProgress;
+  started: boolean;
+  primary: boolean;
+}) {
   const note =
     slot.status === "completed"
-      ? "Replays are practice: they don't change your score, progress, or Training Funds."
-      : started
-        ? "This scenario opens in the next build phase."
-        : "Start the module to set up your Training Funds first.";
+      ? "Replays are practice: they don't change your score, progress, badges, or Training Funds."
+      : slot.status === "in_progress"
+        ? "Your progress is saved. Pick up exactly where you left off."
+        : started
+          ? "A short, neutral introduction, then the scenario is yours to explore."
+          : "Start the module to set up your Training Funds first.";
   return (
     <Card as="li" className="flex flex-col">
       <div className="flex items-start justify-between gap-3">
@@ -212,6 +221,15 @@ function ScenarioSlotCard({ slot, started }: { slot: ScenarioProgress; started: 
         <Icon name="info" className="mt-0.5 size-4" />
         {note}
       </p>
+      {started && slot.action !== "locked" && (
+        <div className="mt-4">
+          <StartScenarioButton
+            scenarioKey={slot.key}
+            action={slot.action}
+            variant={primary ? "primary" : "secondary"}
+          />
+        </div>
+      )}
     </Card>
   );
 }

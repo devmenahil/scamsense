@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ModuleKey, ScenarioKey } from "@/content/modules";
 import {
+  ATTEMPT_STATES,
   assertModuleUnlocked,
   computeProgression,
   planScenarioStart,
@@ -65,7 +66,7 @@ describe("module progression", () => {
     expect(statuses(computeProgression({ attempts: [], runs: [run("spot-the-trap")] }))[0]).toBe(
       "in_progress",
     );
-    const p = computeProgression({ attempts: [attempt("m1-s1", "EXPLORING")], runs: [run("spot-the-trap")] });
+    const p = computeProgression({ attempts: [attempt("m1-s1", "ACTIVE")], runs: [run("spot-the-trap")] });
     expect(p.modules[0]!.scenarios[0]).toMatchObject({ status: "in_progress", action: "resume" });
   });
 
@@ -120,13 +121,7 @@ describe("module progression", () => {
   });
 
   it("does not count an unfinished attempt as completed", () => {
-    for (const state of [
-      "INTRO",
-      "EXPLORING",
-      "PAYMENT_PENDING",
-      "AWAITING_JUSTIFICATION",
-      "EVALUATING",
-    ] as const) {
+    for (const state of ATTEMPT_STATES.filter((s) => s !== "COMPLETED")) {
       const p = computeProgression({ attempts: [attempt("m1-s1", state), attempt("m1-s2")], runs: [] });
       expect(statuses(p)[1]).toBe("locked");
     }
@@ -147,14 +142,14 @@ describe("replays", () => {
   });
 
   it("an unfinished replay never un-completes a scenario or re-locks a module", () => {
-    const attempts = [attempt("m1-s1"), attempt("m1-s2"), attempt("m1-s1", "EXPLORING", 2)];
+    const attempts = [attempt("m1-s1"), attempt("m1-s2"), attempt("m1-s1", "ACTIVE", 2)];
     const p = computeProgression({ attempts, runs: [run("spot-the-trap", "x")] });
     expect(statuses(p)).toEqual(["completed", "available", "locked"]);
     expect(p.modules[0]!.scenarios[0]).toMatchObject({ status: "completed", action: "resume_replay" });
   });
 
   it("plans first plays, resumes, and replays", () => {
-    const open = attempt("m1-s2", "EXPLORING");
+    const open = attempt("m1-s2", "ACTIVE");
     const p = computeProgression({ attempts: [attempt("m1-s1"), open], runs: [run("spot-the-trap")] });
     expect(planScenarioStart(p, "m1-s1")).toEqual({ kind: "new", attemptNumber: 2, isReplay: true });
     expect(planScenarioStart(p, "m1-s2")).toEqual({ kind: "resume", attemptId: open.id });

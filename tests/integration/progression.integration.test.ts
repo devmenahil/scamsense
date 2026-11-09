@@ -77,8 +77,44 @@ describe.skipIf(!ready)("progression + training funds (database)", () => {
       p_scoring_version: "integration-test",
       p_payment_classification: classification,
     });
-  const toEvaluating = (attemptId: string) =>
-    admin.from("scenario_attempts").update({ state: "EVALUATING" }).eq("id", attemptId);
+  /** Walks an attempt through the Step 6 state machine (apply_attempt_event) to the end of the results pipeline. */
+  const step = (
+    attemptId: string,
+    from: string,
+    to: string,
+    type: string,
+    extra: { decision?: string; text?: string } = {},
+  ) =>
+    rpc("apply_attempt_event", {
+      p_user_id: aliceId,
+      p_attempt_id: attemptId,
+      p_from_state: from,
+      p_to_state: to,
+      p_event_type: type,
+      p_action_id: null,
+      p_decision_id: extra.decision ?? null,
+      p_justification: extra.text ?? null,
+    });
+  const toEvaluating = async (attemptId: string, decision = "report_email") => {
+    const steps: [string, string, string, { decision?: string; text?: string }?][] = [
+      ["INTRO", "ACTIVE", "START"],
+      ["ACTIVE", "DECISION_SELECTED", "SELECT_DECISION", { decision }],
+      ["DECISION_SELECTED", "EXPLANATION_REQUIRED", "CONFIRM_DECISION", { decision }],
+      [
+        "EXPLANATION_REQUIRED",
+        "FINALIZED",
+        "SUBMIT_EXPLANATION",
+        { text: "Integration test reasoning text." },
+      ],
+      ["FINALIZED", "FEEDBACK_AVAILABLE", "FEEDBACK_READY"],
+      ["FEEDBACK_AVAILABLE", "REVIEW_AVAILABLE", "REVIEW_READY"],
+      ["REVIEW_AVAILABLE", "RECOVERY_AVAILABLE", "RECOVERY_READY"],
+    ];
+    for (const [from, to, type, extra] of steps) {
+      const r = await step(attemptId, from, to, type, extra);
+      if (r.error) throw new Error(`${type}: ${r.error.message}`);
+    }
+  };
   const ledger = async (c: SupabaseClient, runId: string) =>
     (await c.from("wallet_ledger_entries").select("*").eq("module_run_id", runId).order("id")).data ?? [];
 
@@ -207,7 +243,7 @@ describe.skipIf(!ready)("progression + training funds (database)", () => {
   });
 
   it("only complete_scenario_attempt can complete an attempt; the ledger is append-only", async () => {
-    expect((await complete(m1s1, "fraud_loss")).error?.message).toBe("attempt_not_evaluating");
+    expect((await complete(m1s1, "fraud_loss")).error?.message).toBe("attempt_not_ready_for_completion");
     const direct = await admin.from("scenario_attempts").update({ state: "COMPLETED" }).eq("id", m1s1);
     expect(direct.error).not.toBeNull();
     const tamper = await admin
@@ -257,28 +293,28 @@ describe.skipIf(!ready)("progression + training funds (database)", () => {
     expect(r.data).toMatchObject({ attempt_number: 2, is_replay: true, state: "INTRO" });
     expect(r.data.id).not.toBe(m1s1); // its own practice attempt id
 
-    // The whole flow is available again: explore, a payment step, a new decision and justification.
-    for (const state of ["EXPLORING", "PAYMENT_PENDING", "EXPLORING", "PAYMENT_PENDING"]) {
-      expect((await admin.from("scenario_attempts").update({ state }).eq("id", r.data.id)).error).toBeNull();
-    }
-    const decided = await admin
-      .from("scenario_attempts")
-      .update({
-        state: "AWAITING_JUSTIFICATION",
-        decision_id: "pay_now",
-        decision_committed_at: new Date().toISOString(),
-      })
-      .eq("id", r.data.id);
-    expect(decided.error).toBeNull();
-    const justified = await admin
-      .from("scenario_attempts")
-      .update({
-        state: "EVALUATING",
-        justification: "A new reasoning for my practice replay attempt.",
-        justification_submitted_at: new Date().toISOString(),
-      })
-      .eq("id", r.data.id);
-    expect(justified.error).toBeNull();
+    // The whole flow is available again: explore, a new decision and justification, a checkout that is cancelled,
+    // retried, and finally finished without paying (Step 6 state machine).
+    const id = r.data.id as string;
+    const flow: [string, string, string, { decision?: string; text?: string }?][] = [
+      ["INTRO", "ACTIVE", "START"],
+      ["ACTIVE", "DECISION_SELECTED", "SELECT_DECISION", { decision: "pay_now" }],
+      ["DECISION_SELECTED", "EXPLANATION_REQUIRED", "CONFIRM_DECISION", { decision: "pay_now" }],
+      [
+        "EXPLANATION_REQUIRED",
+        "PAYMENT_PENDING",
+        "SUBMIT_EXPLANATION",
+        { text: "A new reasoning for my practice replay attempt." },
+      ],
+      ["PAYMENT_PENDING", "PAYMENT_CANCELLED", "PAYMENT_CANCELLED"],
+      ["PAYMENT_CANCELLED", "PAYMENT_PENDING", "RETRY_PAYMENT"],
+      ["PAYMENT_PENDING", "PAYMENT_CANCELLED", "PAYMENT_CANCELLED"],
+      ["PAYMENT_CANCELLED", "FINALIZED", "FINALIZE"],
+      ["FINALIZED", "FEEDBACK_AVAILABLE", "FEEDBACK_READY"],
+      ["FEEDBACK_AVAILABLE", "REVIEW_AVAILABLE", "REVIEW_READY"],
+    ];
+    for (const [from, to, type, extra] of flow)
+      expect((await step(id, from, to, type, extra)).error, type).toBeNull();
 
     // Replay payments are never charged to the official Training Funds ledger (Phase 5 stores them separately).
     const paid = await rpc("record_training_payment", {
@@ -289,6 +325,7 @@ describe.skipIf(!ready)("progression + training funds (database)", () => {
     });
     expect(paid.error?.message).toBe("replay_not_charged");
 
+    expect((await step(id, "REVIEW_AVAILABLE", "RECOVERY_AVAILABLE", "RECOVERY_READY")).error).toBeNull();
     const done = await complete(r.data.id, null, [40, 30, 20, 10]);
     expect(done.error).toBeNull();
     expect(done.data).toMatchObject({ is_replay: true, module_completed: true });

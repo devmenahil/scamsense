@@ -7,9 +7,10 @@ import type { SupabaseServerClient } from "@/lib/supabase/server";
 export async function requireOnboardedProgressProfile(supabase: SupabaseServerClient, userId: string) {
   const { data, error } = await supabase
     .from("profiles")
-    .select("income_bracket, preferred_currency, onboarding_completed")
+    .select("display_name, income_bracket, preferred_currency, onboarding_completed")
     .eq("user_id", userId)
     .maybeSingle<{
+      display_name: string | null;
       income_bracket: string | null;
       preferred_currency: string;
       onboarding_completed: boolean;
@@ -21,6 +22,7 @@ export async function requireOnboardedProgressProfile(supabase: SupabaseServerCl
     throw new ApiError(403, "onboarding_required", "Please finish setting up your profile first.");
   }
   return {
+    displayName: data.display_name,
     incomeBracket: data.income_bracket as Profile["incomeBracket"],
     preferredCurrency: data.preferred_currency,
   };

@@ -1,9 +1,10 @@
 # ScamSense — Data Model
 
-Status: Phase 3 (Step 5). Supabase PostgreSQL. Implemented: `profiles`
+Status: Phase 4 (Step 6). Supabase PostgreSQL. Implemented: `profiles`
 (`20261109000000_profiles.sql`) and `module_runs`, `scenario_attempts`, `wallet_ledger_entries`, `scenario_scores`
 (`20261109120000_progression_wallet.sql`); currency allowlist narrowed to USD by `20261109140000_usd_only_currency.sql`
-(Step 5 review). The other tables are still design-only and arrive with the phases that
+(Step 5 review); Step 6 scenario engine in `20261110090000_scenario_engine.sql` (13 attempt states, event log,
+`apply_attempt_event`). The other tables are still design-only and arrive with the phases that
 need them (see IMPLEMENTATION_PLAN).
 
 ## 1. Principles
@@ -25,6 +26,7 @@ module_runs 1─* scenario_attempts
 module_runs 1─* wallet_ledger_entries
 scenario_attempts 1─0..1 scenario_scores (deterministic 40/30/20/10 score, written at completion)
 scenario_attempts 1─0..1 evaluations  (latest/final; history kept via evaluation rows with is_final flag)
+scenario_attempts 1─* scenario_attempt_events (append-only log of accepted state-machine events)
 scenario_attempts 1─* payment_transactions
 scenario_attempts 1─* wallet_ledger_entries (payment entries reference the attempt)
 module_runs 1─0..1 badges
@@ -96,8 +98,10 @@ change, once (trigger).
 | `attempt_number` | int ≥ 1 | 1 = scored attempt; > 1 = replay |
 | `is_replay` | boolean generated (`attempt_number > 1`) | a **practice attempt**: full flow (decision, justification, Sandbox payment, feedback) recorded separately; never official |
 | `content_version` | text not null | |
-| `state` | text not null default `INTRO` | `INTRO`,`EXPLORING`,`PAYMENT_PENDING`,`AWAITING_JUSTIFICATION`,`EVALUATING`,`COMPLETED` |
-| `decision_id`, `decision_committed_at` | null until committed | write-once (trigger) |
+| `state` | text not null default `INTRO` | Step 6: `INTRO`,`ACTIVE`,`INVESTIGATING`,`DECISION_SELECTED`,`EXPLANATION_REQUIRED`,`PAYMENT_PENDING`,`PAYMENT_COMPLETED`,`PAYMENT_CANCELLED`,`FINALIZED`,`FEEDBACK_AVAILABLE`,`REVIEW_AVAILABLE`,`RECOVERY_AVAILABLE`,`COMPLETED`; changes only along legal transitions (trigger) |
+| `pending_decision_id` | text null | the selected, not yet confirmed decision; set iff `DECISION_SELECTED` |
+| `decision_id`, `decision_committed_at` | null until confirmed | write-once (trigger), set by CONFIRM_DECISION |
+| `finalized_at` | timestamptz null | set iff FINALIZED or later; write-once |
 | `justification`, `justification_submitted_at` | 20–1000 chars | write-once (trigger) |
 | `decision_correct` | boolean null | set at completion only (check) |
 | `completed_at` | timestamptz null | present iff COMPLETED (check) |
@@ -105,7 +109,24 @@ change, once (trigger).
 | unique | (`user_id`, `scenario_key`, `attempt_number`) | |
 | partial unique | (`user_id`, `scenario_key`) where state ≠ COMPLETED | at most one unfinished attempt (resume, never duplicate) |
 
-COMPLETED attempts are final. The state can only become COMPLETED inside `complete_scenario_attempt`.
+COMPLETED attempts are final. The state can only become COMPLETED inside `complete_scenario_attempt`. Since Step 6
+the trusted writer has no direct UPDATE grant: every change goes through `apply_attempt_event`. A NOT VALID shape
+check ties each state to its fields (no decision before EXPLANATION_REQUIRED, an explanation from PAYMENT_PENDING on).
+
+### 3.3b `scenario_attempt_events` (implemented, Step 6): append-only per-attempt log
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bigint identity PK | order of events |
+| `user_id`, `attempt_id`, `module_run_id` | composite FK → scenario_attempts | a replay has its own attempt and log |
+| `event_type` | text | the state-machine event (client or server) incl. `COMPLETE` |
+| `action_id` | text null | RECORD_ACTION only (each action at most once per attempt) |
+| `decision_id` | text null | SELECT_DECISION / CONFIRM_DECISION |
+| `from_state`, `to_state` | text | the transition applied |
+| `created_at` | timestamptz | |
+
+RLS: owner may SELECT; nobody may INSERT/UPDATE/DELETE directly (UPDATE trigger raises `event_log_append_only`).
+At most 500 events per attempt. The log restores the environment after a refresh and gives Step 8 the investigation
+and verification actions per attempt (original and replays assessed independently).
 
 ### 3.3a `scenario_scores` (implemented): one immutable score per completed attempt
 | Column | Type | Notes |
@@ -228,11 +249,16 @@ verified session. Errors are SQLSTATE `P0001` with stable messages (`module_lock
    replays, completed attempts/runs, a second payment per attempt, and overdrafts; inserts a `pending` PAYMENT.
    Phase 5's capture flow calls it.
 4. `complete_scenario_attempt(user, attempt, decision_correct, 4 point components, reasoning_source, evidence ids,
-   verification ids, scoring_version, payment_classification)`: requires `EVALUATING`; idempotent once COMPLETED;
+   verification ids, scoring_version, payment_classification)`: requires `RECOVERY_AVAILABLE` (Step 6; was
+   `EVALUATING`), logs a COMPLETE event; idempotent once COMPLETED;
    in one transaction marks COMPLETED, inserts the score, classifies the attempt's payment, and completes the module
    run (closing balance) when both scenarios' first attempts are done. Phase 6 calls it.
-5. *(Phase 5)* `record_capture(...)`: marks the payment transaction CAPTURED and calls the ledger debit above.
-6. *(Phase 9)* badge + certificate rows at module completion.
+5. `apply_attempt_event(user, attempt, from_state, to_state, event_type, action_id, decision_id, justification)`
+   (Step 6): locks the row, requires `state = from_state` (`attempt_state_conflict`), rejects COMPLETED, enforces the
+   event cap, applies the event's fields (pending/confirmed decision, explanation, finalized_at), updates the state
+   (trigger checks legality: `invalid_state_transition`) and appends the event, atomically.
+6. *(Phase 5)* `record_capture(...)`: marks the payment transaction CAPTURED and calls the ledger debit above.
+7. *(Phase 9)* badge + certificate rows at module completion.
 
 ## 5. Static content types (TypeScript, validated by Zod)
 ```ts
@@ -241,15 +267,20 @@ Module      { key, order: 1|2|3, title, difficulty: "Beginner"|"Intermediate"|"A
 ScenarioSlot { key: "m1-s1"…"m3-s2", moduleKey, position: 1|2, title, paymentBasisPoints }
 ExchangeRates { EXCHANGE_RATE_SOURCE, ECB_RATES_PER_EUR }  // src/content/exchangeRates.ts (fixed, documented)
 TrainingBudget { DEFAULT_TRAINING_BUDGET_USD = 3000, TRAINING_BUDGET_USD_BY_INCOME }  // USD baseline  // src/content/trainingFunds.ts
-ScenarioRender { key, moduleKey, contentVersion, introLine, environment: Screen[],
-              personalizationSlots: Slot[], decisions: { id, kind: "pay"|"other", trigger }[] }
-AnswerKey   { scenarioKey, legitimacy: "scam"|"legitimate", correctDecisionIds: string[],
-              decisionOutcomes: Record<decisionId, string>, payableDecisionIds: string[],
-              verificationActions: { id, weight }[], unsafeActionIds: string[],   // scoring rubric
-              evidence: Evidence[], safestNextStep, keyLessons: string[], playbookSectionIds: string[],
-              fallbackFeedback: { correct: string, incorrect: string } }
-Evidence    { id, anchorId, classification: "red_flag"|"verify"|"positive", title, explanation,
-              keywords: string[], weight: 1|2|3 }
+ScenarioRender   (src/content/scenarios/schema.ts, client-safe)
+                 { scenarioKey, contentVersion, interfaceType, introLine, apps: App[], startAppId,
+                   actions: { id, kind: "investigate"|"interact", label, requires? }[],
+                   decisions: { id, kind: "pay"|"other", intent, label, summary, requires? }[],
+                   slots: { name, default, maxLength, purpose }[], amountParts, checkout? }
+AuthoredAnswerKey (src/content/scenarios/templateSchema.ts, values in *.server.ts)
+                 { scenarioKey, primaryCategory, secondaryCategoryTags, learningObjectives, activityTags,
+                   contextTags, difficulty, evidenceReferences, fixedScamStatus, fixedCorrectDecisionRules,
+                   evidenceDefinitions, verificationActions, unsafeActionIds, payableDecisionIds, paymentOutcome,
+                   recoveryPolicyIds, fallbackContent }
+EvidenceDefinition { evidenceId, targetElementId, evidenceType: "red_flag"|"worth_verifying"|
+                   "positive_verification_evidence", title, explanation, educationalImportance,
+                   associatedCorrectDecisionRules, weight: 1|2|3, keywords }
+ScenarioTemplate  (assembled in templates.server.ts): every Step 6 brief §5 field
 PlaybookSection { id, title, body, sources: { url, title }[], lastVerified: ISODate }
 Currency    { code, minorUnitDigits }
 ```

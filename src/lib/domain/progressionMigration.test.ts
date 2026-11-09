@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MODULES, MODULE_KEYS } from "@/content/modules";
-import { ATTEMPT_STATES } from "./progression";
 import { SCORE_WEIGHTS } from "./scoring";
 
 /**
@@ -42,9 +41,7 @@ describe("progression migration matches the TypeScript configuration", () => {
     }
   });
 
-  it("attempt states", () => {
-    expect(quoted(constraintBody("scenario_attempts_state_check"))).toEqual([...ATTEMPT_STATES]);
-  });
+  // Attempt states moved to the Step 6 migration: see scenarioStateMachineMigration.test.ts.
 
   it("score component ranges", () => {
     expect(constraintBody("scenario_scores_decision_check")).toContain(`(0, ${SCORE_WEIGHTS.decision})`);

@@ -30,10 +30,10 @@ describe("progress row mapping", () => {
       module_run_id: "r",
       scenario_key: "m1-s1",
       attempt_number: 1,
-      state: "EXPLORING",
+      state: "INVESTIGATING",
       completed_at: null,
     };
-    expect(rowToAttempt(attempt).state).toBe("EXPLORING");
+    expect(rowToAttempt(attempt).state).toBe("INVESTIGATING");
     expect(() => rowToAttempt({ ...attempt, state: "WON" })).toThrow();
     expect(() => rowToAttempt({ ...attempt, scenario_key: "m4-s1" })).toThrow();
     expect(() => toSafeInt("12.5")).toThrow();

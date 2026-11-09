@@ -1,6 +1,6 @@
 # ScamSense — Product Specification
 
-Status: updated for Phase 3 (Step 5: progression, training funds, dashboard, scoring). This is the functional source of truth. It must stay consistent with the
+Status: updated for Phase 4 (Step 6: immersive scenario engine, six authored scenarios). This is the functional source of truth. It must stay consistent with the
 **ScamSense Product Experience — Non-Negotiable Rules** in `CLAUDE.md`, including both the core principles and the
 detailed rules. Rule references such as (R10) point to that section.
 
@@ -78,23 +78,24 @@ minimum score** is required (Step 5).
 
 Categories can overlap. Advanced scenarios should combine warning signs.
 
-### 3.3 Scenario lineup (official titles confirmed in the Step 5 review; storylines still drafts)
-The six scenarios together cover all five categories and include at least one **legitimate** scenario (R17).
-Titles are shown to players; the legitimacy column is internal and never shown before completion (R10).
+### 3.3 Scenario lineup (authored in Step 6; storylines await owner review)
+The six scenarios together cover all five categories and include one **legitimate** scenario (R17). Titles and the
+one-line introductions are shown to players; everything else in this table is internal and never shown before
+completion (R10). All organisations are fictional; TandemPay is the fictional payment app used inside the stories
+(real PayPal UI appears only in the Sandbox checkout, R34).
 
-| Slot | Official title | Draft storyline | Category | Environment | Legit? | Payment possible? |
+| Slot | Title | Neutral introduction | Environment | Category | Truth | Payment decision |
 |---|---|---|---|---|---|---|
-| M1-S1 | **The Security Check** | "Support agent" asks for a verification code | 1 | Chat window | Scam | No |
-| M1-S2 | **Your Account Needs Attention** | Account "restricted" email and look-alike sign-in page | 2 | Email inbox + fictional website | Scam | No |
-| M2-S1 | **An Invoice Has Arrived** | Unexpected invoice with "call us now" number | 3 | Email + invoice view | Scam | Yes (paying the invoice) |
-| M2-S2 | **The Laptop Purchase** | Genuine purchase from a fictional online store | 4 | Fictional storefront + checkout | **Legit** | Yes (paying is correct) |
-| M3-S1 | **The Job Opportunity** | Recruiter's job offer with upfront "activation fee" | 5 | Job board + chat + payment request | Scam | Yes (paying the fee) |
-| M3-S2 | **The Seller's Dilemma** | Buyer's fake "payment pending" confirmation and push to ship | 4 + 3 | Marketplace seller dashboard + email + chat | Scam | No (seller-side; the decision is whether to ship) |
+| M1-S1 | **The Security Check** | "You receive a message about your payment account." | Chat (Messages + TandemPay app) | 1 (+3) | Scam | No (sharing the code is the unsafe choice) |
+| M1-S2 | **Your Account Needs Attention** | "You receive a notification about your account." | Email + fictional browser (spasebank.example vs spacebank.example) | 2 (+1) | Scam | No |
+| M2-S1 | **An Invoice Has Arrived** | "A new invoice has arrived in your inbox." | Invoice (mail, invoice viewer, supplier portal) | 3 (+2) | Scam | Yes: "Pay invoice" |
+| M2-S2 | **The Laptop Purchase** | "You've found a laptop that fits your budget." | Marketplace (buyer) | 4 | **Legit** | Yes: "Place order" (correct) |
+| M3-S1 | **The Job Opportunity** | "You've received an update about a job opportunity." | Chat/email + browser | 5 (+3) | Scam | Yes: "Pay request" (equipment deposit) |
+| M3-S2 | **The Seller's Dilemma** | "A buyer has contacted you about an item you're selling." | Marketplace (seller hub) + mail + TandemPay | 4 (+3, +2) | Scam | No (the decision is whether to ship) |
 
-The title-to-storyline pairing above is my mapping of the confirmed titles onto the draft storylines; it is confirmed
-when the scenarios are authored. Decision options, evidence, and final content are authored per ARCHITECTURE §6 and
-reviewed against R8–R17, R28–R30. Which of a module's two scenarios is suggested first is ranked by the deterministic
-personalization algorithm in Step 8; slot keys, titles, and amounts never move.
+Final content lives in `src/content/scenarios/<key>/` (render + server-only answer key). Which of a module's two
+scenarios is suggested first is ranked by the deterministic personalization algorithm in Step 8 using the templates'
+activity/context tags; slot keys, titles, and amounts never move.
 
 ## 4. Scenario experience
 
@@ -108,33 +109,38 @@ personalization algorithm in Step 8; slot keys, titles, and amounts never move.
    - All links are in-simulation navigation or inert. External fraudulent domains use reserved non-functional
      domains, such as `*.example`, `*.test`, and `*.invalid` (R28, R29).
    - Fake credential or OTP fields are inert. Nothing typed into them is transmitted or stored (R33).
-3. **Decide.** The user commits one final decision from the scenario's fixed set (for example: pay, decline/ignore,
-   verify independently through an official channel, report, ship, don't ship). Decisions are made **through actions
-   native to the environment**: "Pay now" on an invoice, "Ship item" or "Message buyer" in a seller dashboard, "Block
-   & report" in a chat, "Open the official app instead," and so on. The interface adapts to the activity and is never
-   a question with a multiple-choice answer list. Before committing, a short confirmation step ("This will be your
-   final decision") makes it clear the action is final. Nothing indicates whether the scenario is fraudulent or
-   legitimate before this point.
-4. **Pay (only if the decision is to pay and the scenario supports payment, R12).** A genuine PayPal **Sandbox**
-   checkout runs for the server-calculated amount. If the user cancels the PayPal window, no decision is recorded and
-   they return to exploring.
-5. **Justify (R11).** The user writes why they made the decision (required, 20–1,000 characters). Once submitted,
-   the decision and justification are locked.
-6. **Feedback.** This shows:
+3. **Investigate.** Inspecting and verifying (sender details, the address bar's site information, a saved
+   bookmark, the payment app's activity, a seller profile, questions in a chat) are actions inside the environment.
+   They are recorded for the verification score and never end the scenario on their own.
+4. **Decide.** The user commits one final decision from the scenario's fixed set through a control native to the
+   environment ("Pay invoice", "Place order", "Mark as shipped", "Block and report", "Report message", "Start
+   verification" on a page). The interface is never a question with an answer list. A confirmation ("This will be
+   your final decision") lets the user go back and keep exploring; confirming locks the decision. Nothing indicates
+   whether the scenario is fraudulent or legitimate before this point.
+5. **Explain (R11).** The user then answers a question that depends on the decision (for example "What made you feel
+   comfortable proceeding with this payment?", "What made you believe this request was suspicious?", "What convinced
+   you that the payment had been received?"), 20–1,000 characters, reviews it, and submits. Decision and explanation
+   are now locked. **Decision change (Step 6):** the explanation now comes **before** any payment.
+6. **Pay (only for a pay decision, R12).** A genuine PayPal **Sandbox** checkout runs for the server-calculated
+   amount (Step 7; until then the checkout step says the Sandbox connection is pending and no payment is made). If
+   the user cancels or the payment fails, nothing is paid and the Training Funds are untouched; the user can return to
+   checkout or finish without paying (the attempt is then finalized as "pay decision, no payment made"). The decision
+   and explanation stay locked either way.
+7. **Feedback** (Step 8, after the attempt is finalized). This shows:
    - Decision outcome (deterministic: whether the decision matches the answer key).
    - Fictional wallet impact (deterministic).
    - Reasoning assessment: which predetermined evidence the user's reasoning identified, with factual explanations
      (Gemini, grounded in the answer key, R13–R14).
    - A separate short, personalized, lighthearted comment (Gemini, R14).
    - The safest next step (authored).
-7. **Reveal the Red Flags (R15, R16).** Available only after completion. The scenario environment is shown again in
+8. **Reveal the Red Flags (R15, R16).** Available only after completion. The scenario environment is shown again in
    reveal mode, with each piece of evidence highlighted and labeled as one of:
    - **Red flag**: a warning sign.
    - **Worth verifying**: not proof of fraud by itself, but something to check independently.
    - **Positive verification**: evidence that supports legitimacy.
 
    Each item has an explanation. Items the user cited in their reasoning are marked.
-8. **Recovery Playbook.** The results screen ends with the Your Recovery Playbook sections relevant to this
+9. **Recovery Playbook.** The results screen ends with the Your Recovery Playbook sections relevant to this
    scenario (authored and verified, §6), with a link to the full Playbook.
 
 ### 4.2 Feedback tone
@@ -287,7 +293,7 @@ Training Funds strip sits at the top and the cards stack.
 | Gemini (evaluation) | Deterministic evidence matching plus authored explanations, with a neutral fallback comment instead of humor |
 | Gemini (chat) | Friendly fallback message with links |
 | Zapier | Certificate stays visible on screen, and the email can be retried |
-| PayPal Sandbox | The payment step shows "Sandbox checkout unavailable." The user can retry or choose another decision. No payment is faked as a PayPal transaction. |
+| PayPal Sandbox | The payment step shows "Sandbox checkout unavailable." The user can retry or finish without paying (the decision stays locked). No payment is faked as a PayPal transaction. |
 
 ## 11. Out of scope (MVP)
 Live PayPal payments, real account linking, scanning real messages, leaderboards, social features, XP levels and
@@ -301,8 +307,16 @@ non-U.S. recovery policies, multiple languages, and admin CMS.
    record (§4.3).
 3. ~~Payment percentages~~ Initial values set in Step 5 (§5); tune them with the authored scenarios. A scenario whose
    story has no payment simply never uses its amount.
-4. The final six scenario storylines (§3.3 is a draft).
+4. The six scenario storylines are authored (§3.3); owner review pending.
 5. ~~Budget in other currencies~~ Resolved: USD baseline converted at fixed reference rates (§5.1).
 6. Which additional PayPal currencies to enable once the Sandbox merchant is tested (Phase 5 / Step 7). Currently
    enabled: **USD only**. Candidates with reference rates ready: AUD, CAD, EUR, GBP and others the ECB publishes.
-7. Confirm the title-to-storyline pairing in §3.3.
+7. ~~Title-to-storyline pairing~~ Implemented as in §3.3 (Step 6 brief).
+8. M3-S2 uses the fictional TandemPay wallet for the buyer's claimed payment instead of naming PayPal inside the fake
+   confirmation, because simulated fraudulent interfaces must use fictional organisations and must not imitate
+   PayPal (R29, R34). The debrief can connect it to PayPal. Confirm this is acceptable.
+9. At the lowest Training Funds level (US$500), M2-S2's laptop costs US$60 (12%). The whole market is priced
+   relative to it so it never looks "too cheap", but the absolute price is unrealistic. Consider a minimum amount.
+10. "Finish without paying" after a cancelled checkout finalizes a pay decision with no payment. Step 8 must decide
+   how that scores (currently: the decision counts as chosen; no ledger entry).
+11. No MVP scenario targets the "investments" or "sending invoices" activities; routing falls back for them.

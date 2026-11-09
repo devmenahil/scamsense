@@ -121,21 +121,49 @@ Every phase must preserve the **Non-Negotiable Rules** in `CLAUDE.md`.
 - "Start module" does a full page reload after success: a soft `router.refresh()` received the new payload but did
   not re-render in testing (Next 15.5). Revisit if soft refresh is needed elsewhere.
 
-## Phase 4 — Content model + immersive scenario engine (no AI, no payments yet)
-- [ ] Zod content schemas (`src/content/schema.ts`) and the render/answer-key file split with `server-only`
-      (answer key includes the scoring rubric: correct decisions, weighted evidence, verification actions, unsafe
-      actions)
-- [ ] Attempt state machine (pure reducer + tests), driving the trusted-writer updates of `scenario_attempts`
-- [ ] Content validation tests (anchors exist, deny-listed judgment words, reserved TLDs, ≥1 legitimate scenario)
-- [ ] Author the **first** scenario end to end (render + answer key) as the reference implementation
-- [ ] Environment renderers: EmailClient, ChatWindow, FakeBrowser (inert address bar), InvoiceView,
-      MarketplaceView, PaymentRequest. All are responsive and keyboard operable
-- [ ] Decisions bound to environment-native actions + final-decision confirmation (not a multiple-choice list)
-- [ ] Inert credential/OTP inputs (never transmitted)
-- [ ] Attempt APIs: create/resume/replay (`planScenarioStart` + `create_scenario_attempt`), get (client-safe),
-      events (recording verification/unsafe action IDs for scoring), decision, justification
-- [ ] Justification step (20–1000 chars), locking
-- [ ] Leak test: API payload snapshots contain no answer-key fields before COMPLETED
+## Phase 4 — Immersive scenario engine (Step 6) ✅ — verified 2026-11-10, awaiting owner review
+Step 6 also authored all six scenarios (originally Phase 8 content), because the brief asked for six complete
+templates. No Gemini and no PayPal API calls were added.
+- [x] Zod content schemas: client-safe render (`src/content/scenarios/schema.ts`) and server-only template/answer key
+      (`templateSchema.ts`, `*/answerKey.server.ts` with `import "server-only"`). Registries `renders.ts` (parsed at
+      import) and `templates.server.ts` (cross-checks every answer key against its render)
+- [x] 13-state machine as a pure reducer (`src/lib/domain/scenarioStateMachine.ts`) + tests; mirrored in SQL
+      (transition trigger) with a drift test
+- [x] Migration `20261110090000_scenario_engine.sql`: new states (old ones mapped), `pending_decision_id`,
+      `finalized_at`, append-only `scenario_attempt_events`, `apply_attempt_event()` (the only state writer),
+      `complete_scenario_attempt` now requires `RECOVERY_AVAILABLE`. Applied by the owner 2026-11-10
+- [x] Six templates with neutral intros, decisions, controlled branches, fixed answer keys, weighted evidence
+      (red flag / worth verifying / positive verification), rubric, payment configuration, Recovery Playbook section
+      IDs, fallback content, activity/context tags and difficulty metadata (Step 8 routing)
+- [x] Four reusable environments built from shared parts (`src/components/scenario/sim/`): chat/email (Messages,
+      Mail), fictional browser (BrowserFrame + site blocks, inspectable address bar, history, bookmarks), invoice
+      viewer, marketplace (buyer storefront + seller hub), plus a fictional payment-account app (TandemPay)
+- [x] Decisions bound to environment-native controls + "final decision" confirmation; contextual explanation prompt
+      per decision intent; write → review → submit-and-lock
+- [x] Inert environments: no credential, code, or card fields anywhere; every domain is `.example`
+- [x] Attempt APIs: create/resume/replay, client-safe view, events, justification
+- [x] PayPal boundary (`src/lib/payments/checkout.ts`): checkout request (server amount), idempotency keys, capture
+      verification, wallet effect (ledger vs practice), `PaymentGateway` interface with a pending gateway that never
+      reports success; checkout panel shows "waiting for the PayPal Sandbox connection"
+- [x] Replays: separate practice attempts with their own id, event log, explanation and (Step 7) checkout keys
+- [x] Leak tests (view payloads, IDs, client bundle) and content tests (judgment words, `.example` domains, fictional
+      phone numbers, tokens, anchors, category coverage, ≥1 legitimate)
+- [x] Tests: 174 unit tests; 44 live integration tests (13 new: transitions, bypasses, write-once decision and
+      explanation, append-only log, completion only via function, replay independence, API journey incl. locked
+      module, foreign attempt, laptop to pending checkout, replay without touching progress); 34 real-browser checks
+      in Chrome (M1-S1 end to end with refreshes, M2-S2 to the pending checkout and cancel/retry, all six scenarios
+      and every app at 1280 and 360 px, no horizontal scroll, no judgment words, no console errors)
+
+**Phase 4 notes / deferred**
+- Attempts stop at FINALIZED until Step 8 adds evaluation (FINALIZED → FEEDBACK_AVAILABLE → REVIEW_AVAILABLE →
+  RECOVERY_AVAILABLE → `complete_scenario_attempt`). Until then a real user can finish decisions but cannot complete a
+  scenario, so Module 2 stays locked outside the tests.
+- A pay decision waits in PAYMENT_PENDING; the player can cancel, return to checkout, or finish without paying.
+  PAYMENT_CAPTURED is a server-only event for Step 7.
+- Personalization uses authored slot defaults and the profile first name; Gemini slots arrive in Step 8.
+- `/play/demo` was removed (the real player replaced it); `/play/demo/results` stays as the Phase 7 design shell.
+- A foreign `/play/<id>` shows the not-found page with HTTP 200 (the `(app)` loading boundary streams); no attempt
+  data is sent.
 
 ## Phase 5 — PayPal Sandbox checkout + fictional wallet
 - [ ] `paypal.ts` (OAuth token cache, create order, capture, Sandbox guard, idempotency keys)
@@ -165,7 +193,7 @@ Every phase must preserve the **Non-Negotiable Rules** in `CLAUDE.md`.
 
 ## Phase 8 — Remaining scenario content
 - [ ] Author scenarios 2–6 per PRODUCT_SPEC §3.3 (after the product owner confirms the storylines)
-- [ ] Payment percentages, evidence, keywords, fallback texts, Playbook links
+- [x] Payment percentages, evidence, keywords, fallback texts, Playbook links (initial versions, Step 6)
 - [ ] Content review against the core principles + R8–R17, R28–R30
 
 ## Phase 9 — Module completion: badge, certificate, report, Zapier
