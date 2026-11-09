@@ -41,7 +41,7 @@ export default function LandingPage() {
         <div className="container-page grid items-center gap-14 py-12 sm:py-16 lg:grid-cols-[1.05fr_1fr] lg:gap-12 lg:py-24">
           <div className="min-w-0">
             <Badge tone="mist" wrap icon={<Icon name="shield" className="size-4" />}>
-              Educational scam simulator · Adults 18+
+              Educational scam simulator · Practice, not panic
             </Badge>
             <h1
               id="hero-title"

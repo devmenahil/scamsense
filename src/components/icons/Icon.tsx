@@ -31,7 +31,9 @@ export type IconName =
   | "info"
   | "play"
   | "book"
-  | "clock";
+  | "clock"
+  | "sign-out"
+  | "target";
 
 type Part = (accentClass: string) => ReactNode;
 
@@ -191,6 +193,19 @@ const ICONS: Record<IconName, Part> = {
       <circle cx="12" cy="12" r="8.5" />
       <path d="M12 7.5V12l3 2" />
       <circle cx="12" cy="12" r="1" className={a} />
+    </>
+  ),
+  target: (a) => (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="4.75" />
+      <circle cx="12" cy="12" r="1.5" className={a} />
+    </>
+  ),
+  "sign-out": (a) => (
+    <>
+      <path d="M14 4h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14z" className={a} />
+      <path d="M10 8l-4 4 4 4M6 12h9" />
     </>
   ),
 };

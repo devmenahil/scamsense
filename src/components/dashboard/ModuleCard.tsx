@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { ModuleDefinition } from "@/content/modules";
-import type { DemoScenario, ModuleStatus } from "@/lib/demo/demoData";
-import { cn } from "@/lib/cn";
+import type { ModuleProgress } from "@/lib/domain/progression";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -9,7 +8,7 @@ import { IconTile } from "@/components/ui/IconTile";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { StatusLabel } from "./StatusLabel";
 
-const MODULE_ICONS: Record<ModuleDefinition["key"], IconName> = {
+export const MODULE_ICONS: Record<ModuleDefinition["key"], IconName> = {
   "spot-the-trap": "phishing",
   "trust-under-pressure": "invoice",
   "outsmart-the-scam": "marketplace",
@@ -19,27 +18,19 @@ const MODULE_ICONS: Record<ModuleDefinition["key"], IconName> = {
  * Module summary card. Locked modules show why they are locked and render no action (no dead buttons).
  * Unlocked modules are a single link to the module overview.
  */
-export function ModuleCard({
-  module: m,
-  status,
-  scenarios,
-}: {
-  module: ModuleDefinition;
-  status: ModuleStatus;
-  scenarios: DemoScenario[];
-}) {
+export function ModuleCard({ progress }: { progress: ModuleProgress }) {
+  const { module: m, status, completedScenarios, scenarios } = progress;
   const locked = status === "locked";
-  const completed = scenarios.filter((s) => s.status === "completed").length;
   return (
     <Card
       as="article"
       interactive={!locked}
       tone={locked ? "mist" : "white"}
-      className={cn("relative flex flex-col gap-4 sm:flex-row sm:items-center")}
+      className="relative flex flex-col gap-4 sm:flex-row sm:items-center"
     >
       <IconTile
         name={locked ? "lock" : MODULE_ICONS[m.key]}
-        accent={!locked}
+        accent={false}
         tone={locked ? "mist" : "white"}
       />
       <div className="min-w-0 flex-1">
@@ -67,10 +58,10 @@ export function ModuleCard({
         ) : (
           <ProgressBar
             className="mt-3 max-w-sm"
-            value={completed}
+            value={completedScenarios}
             max={scenarios.length}
             label="Scenarios completed"
-            valueText={`${completed} of ${scenarios.length}`}
+            valueText={`${completedScenarios} of ${scenarios.length}`}
           />
         )}
       </div>

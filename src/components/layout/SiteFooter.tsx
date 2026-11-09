@@ -32,8 +32,7 @@ export function SiteFooter({ className }: { className?: string }) {
       </div>
       <div className="border-t border-white/25">
         <p className="container-page py-4 text-caption text-white/85">
-          PayPal AI Hackathon project · For adults 18+ · No real passwords, codes, or card numbers are ever
-          needed.
+          PayPal AI Hackathon project · No real passwords, codes, or card numbers are ever needed.
         </p>
       </div>
     </footer>

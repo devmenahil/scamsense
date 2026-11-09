@@ -1,6 +1,10 @@
 # ScamSense — Data Model
 
-Status: Phase 0 baseline. Supabase PostgreSQL. Migrations are implemented in a later phase (see IMPLEMENTATION_PLAN).
+Status: Phase 3 (Step 5). Supabase PostgreSQL. Implemented: `profiles`
+(`20261109000000_profiles.sql`) and `module_runs`, `scenario_attempts`, `wallet_ledger_entries`, `scenario_scores`
+(`20261109120000_progression_wallet.sql`); currency allowlist narrowed to USD by `20261109140000_usd_only_currency.sql`
+(Step 5 review). The other tables are still design-only and arrive with the phases that
+need them (see IMPLEMENTATION_PLAN).
 
 ## 1. Principles
 - **Content lives in code, progress lives in the DB.** Modules, scenarios, answer keys, and Playbook content are
@@ -19,6 +23,7 @@ auth.users 1─1 profiles
 auth.users 1─* module_runs            (one per module the user has started; holds the wallet "reset")
 module_runs 1─* scenario_attempts
 module_runs 1─* wallet_ledger_entries
+scenario_attempts 1─0..1 scenario_scores (deterministic 40/30/20/10 score, written at completion)
 scenario_attempts 1─0..1 evaluations  (latest/final; history kept via evaluation rows with is_final flag)
 scenario_attempts 1─* payment_transactions
 scenario_attempts 1─* wallet_ledger_entries (payment entries reference the attempt)
@@ -34,56 +39,91 @@ Static (code) entities referenced by key: `Module`, `Scenario` (render + answer 
 
 ## 3. Tables
 
-### 3.1 `profiles`
+### 3.1 `profiles` (implemented)
+One row per Supabase Auth user, created by the `on_auth_user_created` trigger from sign-up metadata. Emails and
+passwords live only in `auth.users`.
+
 | Column | Type | Notes |
 |---|---|---|
-| `user_id` | uuid PK, FK auth.users | |
-| `display_name` | text not null | 1–60 chars |
-| `age_bracket` | text not null | check in (`18_24`,`25_34`,`35_44`,`45_54`,`55_64`,`65_plus`) |
-| `adult_confirmed_at` | timestamptz not null | 18+ attestation (R2) |
-| `life_stage` | text not null | enum-like check |
-| `financial_activities` | text[] not null | ≥1, values from a fixed list |
-| `payment_experience` | text not null | `new`,`occasional`,`regular`,`very_experienced` |
-| `financial_goal` | text not null | fixed option key |
-| `financial_goal_note` | text null | ≤120 chars |
-| `income_bracket` | text null | optional, includes `prefer_not_to_say` (R3) |
-| `preferred_currency` | char(3) not null default `'USD'` | validated against the server allowlist (R4) |
-| `onboarded_at` | timestamptz null | set when onboarding completes |
-| `created_at`, `updated_at` | timestamptz | |
+| `user_id` | uuid PK, FK auth.users on delete cascade | ownership key; never client-writable |
+| `display_name` | text not null | 1–60 chars (trimmed) |
+| `age_confirmed` | boolean not null, check = true | 18+ attestation (R2); immutable |
+| `age_confirmed_at` | timestamptz not null default now() | immutable |
+| `age_bracket` | text null | optional; adult brackets only |
+| `occupation` | text null | fixed ids; required once onboarded |
+| `country` | text null | ISO 3166-1 alpha-2 (249 codes); required once onboarded |
+| `financial_activities` | text[] not null default `{}` | ⊆ fixed ids, ≤10, de-duplicated + sorted by trigger; ≥1 once onboarded |
+| `payment_experience` | text null | `new`,`occasional`,`frequent`; required once onboarded |
+| `income_bracket` | text null | optional fixed ids incl. `prefer_not_to_say` |
+| `income_bracket_label` | text null | **derived by trigger** from the id (display value snapshot); not client-writable |
+| `financial_goal` | text null | fixed ids; required once onboarded |
+| `custom_goal` | text null | ≤120 chars |
+| `goal_amount_minor` | bigint null | integer minor units of `preferred_currency`, 1…1e9 (R38) |
+| `preferred_currency` | text not null default `'USD'` | check: enabled allowlist, **USD only** until PayPal merchant verification |
+| `onboarding_completed` | boolean not null default false | check: only true when all required fields are present; can't flip back |
+| `onboarding_completed_at` | timestamptz null | stamped by trigger |
+| `created_at`, `updated_at` | timestamptz | `updated_at` maintained by trigger |
 
-### 3.2 `module_runs`: one row per (user, module), representing the module's training-funds period
+Security: RLS enabled; policies `profiles_select_own` / `profiles_update_own` (`(select auth.uid()) = user_id`) for the
+`authenticated` role only. Privileges: `anon` has none; `authenticated` has `SELECT` and column-level `UPDATE` on the
+user-editable columns only. No INSERT or DELETE grants (rows come from the trigger and go via cascade). The check
+constraints mirror the TypeScript option lists; `src/lib/profile/migration.test.ts` fails if they drift.
+
+### 3.2 `module_runs` (implemented): one row per (user, module), the module's Training Funds period
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid PK | |
-| `user_id` | uuid FK | |
-| `module_key` | text not null | `spot_the_trap` / `trust_under_pressure` / `outsmart_the_scam` |
-| `currency` | char(3) not null | snapshot of the preferred currency at start |
-| `starting_funds_minor` | bigint not null | snapshot from content config (R19, R20) |
-| `closing_balance_minor` | bigint null | frozen at completion |
+| `user_id` | uuid FK auth.users, cascade | |
+| `module_key` | text not null | `spot-the-trap` / `trust-under-pressure` / `outsmart-the-scam` (check) |
+| `currency` | text not null | ISO 4217 snapshot of the preferred currency at start |
+| `starting_funds_minor` | bigint not null | > 0; snapshot of `calculateStartingFunds` (USD baseline from the income bracket, converted at the fixed reference rate) |
+| `closing_balance_minor` | bigint null | frozen at completion; set together with `completed_at` |
 | `started_at` | timestamptz | |
-| `completed_at` | timestamptz null | set when both scenarios are COMPLETED |
-| unique | (`user_id`, `module_key`) | MVP: one run per module |
+| `completed_at` | timestamptz null | set by `complete_scenario_attempt` when both scenarios' first attempts are COMPLETED |
+| unique | (`user_id`, `module_key`) | one run per module; replays reuse it and never change it |
 
-Lock state is **derived**, not stored: module N is unlocked if N = 1 or the run for module N−1 has `completed_at`.
+Lock state is **derived**, not stored: module N is unlocked if N = 1 or module N−1 has both scenarios completed (no
+minimum score). `start_module_run` re-checks that the previous run is completed. Only completion columns may ever
+change, once (trigger).
 
-### 3.3 `scenario_attempts`
+### 3.3 `scenario_attempts` (implemented)
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid PK | |
 | `user_id` | uuid FK | |
-| `module_run_id` | uuid FK module_runs | |
-| `scenario_key` | text not null | |
+| `module_run_id`, `module_key` | composite FK → module_runs (id, user_id, module_key) | the attempt cannot point at another user's or module's run |
+| `scenario_key` | text not null | `m1-s1` … `m3-s2`; (module, scenario) pair checked |
+| `attempt_number` | int ≥ 1 | 1 = scored attempt; > 1 = replay |
+| `is_replay` | boolean generated (`attempt_number > 1`) | a **practice attempt**: full flow (decision, justification, Sandbox payment, feedback) recorded separately; never official |
 | `content_version` | text not null | |
-| `state` | text not null | `INTRO`,`EXPLORING`,`PAYMENT_PENDING`,`AWAITING_JUSTIFICATION`,`EVALUATING`,`COMPLETED` |
-| `personalization` | jsonb not null | validated slot values + `source` (`gemini`/`default`) |
-| `decision_id` | text null | immutable once set |
-| `decision_committed_at` | timestamptz null | |
-| `justification` | text null | 20–1000 chars, immutable once set |
-| `justification_submitted_at` | timestamptz null | |
-| `decision_correct` | boolean null | deterministic, set at evaluation |
-| `completed_at` | timestamptz null | |
+| `state` | text not null default `INTRO` | `INTRO`,`EXPLORING`,`PAYMENT_PENDING`,`AWAITING_JUSTIFICATION`,`EVALUATING`,`COMPLETED` |
+| `decision_id`, `decision_committed_at` | null until committed | write-once (trigger) |
+| `justification`, `justification_submitted_at` | 20–1000 chars | write-once (trigger) |
+| `decision_correct` | boolean null | set at completion only (check) |
+| `completed_at` | timestamptz null | present iff COMPLETED (check) |
 | `created_at`, `updated_at` | timestamptz | |
-| unique | (`user_id`, `scenario_key`) | MVP: one attempt per scenario (resumable) |
+| unique | (`user_id`, `scenario_key`, `attempt_number`) | |
+| partial unique | (`user_id`, `scenario_key`) where state ≠ COMPLETED | at most one unfinished attempt (resume, never duplicate) |
+
+COMPLETED attempts are final. The state can only become COMPLETED inside `complete_scenario_attempt`.
+
+### 3.3a `scenario_scores` (implemented): one immutable score per completed attempt
+| Column | Type | Notes |
+|---|---|---|
+| `attempt_id` | uuid PK, composite FK → scenario_attempts (id, user_id, module_run_id) | |
+| `user_id`, `module_run_id`, `scenario_key` | | denormalized for reads |
+| `is_replay` | boolean | replays are stored but excluded from totals |
+| `decision_correct` | boolean | consistent with `decision_points` (check) |
+| `decision_points` | smallint | 0 or 40 |
+| `reasoning_points` | smallint | 0–30 |
+| `verification_points` | smallint | 0–20 |
+| `payment_safety_points` | smallint | 0 or 10 |
+| `total_points` | smallint generated | sum of the four |
+| `max_points` | smallint = 100 | |
+| `reasoning_source` | text | `gemini` or `fallback` (no score exists without a real assessment) |
+| `addressed_evidence_ids`, `verification_action_ids` | text[] | validated IDs used for the points |
+| `scoring_version` | text | `SCORING_VERSION` in `scoring.ts` |
+| `created_at` | timestamptz | |
 
 ### 3.4 `evaluations`
 | Column | Type | Notes |
@@ -102,17 +142,18 @@ Lock state is **derived**, not stored: module N is unlocked if N = 1 or the run 
 | `latency_ms` | int null | |
 | `created_at` | timestamptz | |
 
-### 3.5 `payment_transactions` (PayPal Sandbox only)
+### 3.5 `payment_transactions` (PayPal Sandbox only; design, created in Phase 5)
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid PK | |
 | `user_id` | uuid FK | |
-| `attempt_id` | uuid FK | |
+| `attempt_id` | uuid FK (composite with user_id) | the scored attempt **or** a replay's own practice attempt |
+| `is_practice` | boolean not null | copied from `scenario_attempts.is_replay`; practice payments never touch the ledger |
 | `decision_id` | text not null | the pay decision |
 | `environment` | text not null check (= `'sandbox'`) | R28 guard at DB level |
 | `paypal_order_id` | text unique not null | |
 | `paypal_capture_id` | text unique null | |
-| `request_id` | uuid unique not null | PayPal-Request-Id idempotency key |
+| `request_id` | uuid unique not null | PayPal-Request-Id idempotency key; a fresh one per order (replays never reuse the original's) |
 | `amount_minor` | bigint not null | server-computed |
 | `currency` | char(3) not null | = module run currency |
 | `percent_bp` | int not null | basis points used to compute the amount |
@@ -121,26 +162,34 @@ Lock state is **derived**, not stored: module N is unlocked if N = 1 or the run 
 | `failure_code` | text null | |
 | `created_at`, `updated_at` | timestamptz | |
 
-Partial unique index: at most one `CAPTURED` row per attempt.
+| `outcome_classification` | text null | set at completion: `spending` or `fraud_loss` (practice payments are classified here; official ones also in the ledger) |
+| `ledger_entry_id` | bigint null FK wallet_ledger_entries | set only for the scored attempt's captured payment; always null for practice |
 
-### 3.6 `wallet_ledger_entries` (fictional training funds, append-only)
+Partial unique index: at most one `CAPTURED` row per attempt (so retries or double clicks cannot capture twice).
+Check: `is_practice` ⇒ `ledger_entry_id is null`. Cancelled/failed rows never produce a ledger entry or a
+"paid" outcome. Phase 5 will also extend `complete_scenario_attempt` to classify the practice payment row.
+
+### 3.6 `wallet_ledger_entries` (implemented: fictional Training Funds, append-only)
 | Column | Type | Notes |
 |---|---|---|
-| `id` | bigserial PK | |
+| `id` | bigint identity PK | chronological order |
 | `user_id` | uuid FK | |
-| `module_run_id` | uuid FK | |
-| `attempt_id` | uuid FK null | null for MODULE_START |
-| `payment_transaction_id` | uuid FK null | |
+| `module_run_id` | uuid, composite FK → module_runs (id, user_id) | |
+| `attempt_id` | uuid null, composite FK → scenario_attempts (id, user_id, module_run_id) | null for MODULE_START |
 | `entry_type` | text | `MODULE_START`, `PAYMENT` |
-| `amount_minor` | bigint | signed (+ start, − payment) |
+| `amount_minor` | bigint | signed: > 0 for MODULE_START, < 0 for PAYMENT (shape check) |
 | `balance_after_minor` | bigint | check ≥ 0 |
-| `currency` | char(3) | |
+| `currency` | text | = run currency |
+| `classification` | text null | PAYMENT only: `pending` during play → `spending` or `fraud_loss` once, at completion |
+| `idempotency_key` | text unique null | PAYMENT only (8–200 chars); Phase 5 uses the PayPal-Request-Id |
 | `created_at` | timestamptz | |
 
-Unique: one `MODULE_START` per module run; one `PAYMENT` per payment transaction.
-Balance = `sum(amount_minor)` per module run. It is independent of any PayPal balance (R18).
+Partial unique indexes: one `MODULE_START` per run; one `PAYMENT` per attempt. Balance = `sum(amount_minor)` per
+module run, independent of any PayPal balance (R18). The only permitted update is classifying a pending payment once
+(trigger); there are no delete grants. Spending and fraud loss are reported separately.
+(A future `payment_transaction_id` link arrives with `payment_transactions` in Phase 5.)
 
-### 3.7 `badges`
+### 3.7 `badges` (Phase 9; until then a badge is derived from `module_runs.completed_at`)
 | `id` uuid PK · `user_id` · `module_run_id` unique · `module_key` · `awarded_at` |
 
 ### 3.8 `certificates`
@@ -166,21 +215,37 @@ Balance = `sum(amount_minor)` per module run. It is independent of any PayPal ba
 | `id` bigserial · `user_id` · `action` (`chat`,`cert_email`,`attempt_create`) · `created_at` |
 Limits are checked by counting rows in a time window. Old rows are pruned opportunistically.
 
-## 4. Transactional operations (Postgres functions, `security definer`, re-check `auth.uid()`)
-1. `start_module_run(module_key)`: checks unlock, inserts the run + MODULE_START ledger entry atomically.
-2. `record_capture(payment_transaction_id, capture_id, paypal_status)`: marks CAPTURED, inserts the PAYMENT ledger
-   entry (balance check), commits the attempt decision, and sets state → `AWAITING_JUSTIFICATION`.
-3. `complete_attempt(attempt_id, evaluation…)`: inserts the evaluation and sets `COMPLETED`. If both module scenarios
-   are complete, it sets `module_runs.completed_at` and the closing balance and inserts the badge + certificate.
+## 4. Transactional operations
+Implemented in Phase 3 as `security definer` functions with `search_path = ''`, executable **only by
+`service_role`** (the server's trusted writer, `src/lib/supabase/admin.ts`), which passes the user id from the
+verified session. Errors are SQLSTATE `P0001` with stable messages (`module_locked`, `module_not_started`,
+`insufficient_funds`, `duplicate_attempt_payment`, `replay_not_charged`, `attempt_not_evaluating`, …).
+1. `start_module_run(user, module_key, currency, starting_funds_minor)`: idempotent (returns the existing run);
+   checks the previous module's run is completed; inserts the run + MODULE_START atomically.
+2. `create_scenario_attempt(user, scenario_key, content_version)`: requires the module run; returns the open attempt
+   if there is one, else inserts attempt `max + 1` (first play or replay).
+3. `record_training_payment(user, attempt, amount_minor, idempotency_key)`: idempotent per key; locks the run; rejects
+   replays, completed attempts/runs, a second payment per attempt, and overdrafts; inserts a `pending` PAYMENT.
+   Phase 5's capture flow calls it.
+4. `complete_scenario_attempt(user, attempt, decision_correct, 4 point components, reasoning_source, evidence ids,
+   verification ids, scoring_version, payment_classification)`: requires `EVALUATING`; idempotent once COMPLETED;
+   in one transaction marks COMPLETED, inserts the score, classifies the attempt's payment, and completes the module
+   run (closing balance) when both scenarios' first attempts are done. Phase 6 calls it.
+5. *(Phase 5)* `record_capture(...)`: marks the payment transaction CAPTURED and calls the ledger debit above.
+6. *(Phase 9)* badge + certificate rows at module completion.
 
 ## 5. Static content types (TypeScript, validated by Zod)
 ```ts
-Module      { key, order: 1|2|3, title, difficulty: "beginner"|"intermediate"|"advanced",
-              startingFundsMajor: number, scenarioKeys: [string, string] }
+Module      { key, order: 1|2|3, title, difficulty: "Beginner"|"Intermediate"|"Advanced", focus, summary, badgeName,
+              scenarios: [ScenarioSlot, ScenarioSlot] }            // src/content/modules.ts (implemented)
+ScenarioSlot { key: "m1-s1"…"m3-s2", moduleKey, position: 1|2, title, paymentBasisPoints }
+ExchangeRates { EXCHANGE_RATE_SOURCE, ECB_RATES_PER_EUR }  // src/content/exchangeRates.ts (fixed, documented)
+TrainingBudget { DEFAULT_TRAINING_BUDGET_USD = 3000, TRAINING_BUDGET_USD_BY_INCOME }  // USD baseline  // src/content/trainingFunds.ts
 ScenarioRender { key, moduleKey, contentVersion, introLine, environment: Screen[],
               personalizationSlots: Slot[], decisions: { id, kind: "pay"|"other", trigger }[] }
 AnswerKey   { scenarioKey, legitimacy: "scam"|"legitimate", correctDecisionIds: string[],
-              decisionOutcomes: Record<decisionId, string>, payable: Record<decisionId, basisPoints>,
+              decisionOutcomes: Record<decisionId, string>, payableDecisionIds: string[],
+              verificationActions: { id, weight }[], unsafeActionIds: string[],   // scoring rubric
               evidence: Evidence[], safestNextStep, keyLessons: string[], playbookSectionIds: string[],
               fallbackFeedback: { correct: string, incorrect: string } }
 Evidence    { id, anchorId, classification: "red_flag"|"verify"|"positive", title, explanation,

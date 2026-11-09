@@ -11,9 +11,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:integration": "vitest run --config vitest.integration.config.mts"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.119.0",
     "clsx": "^2.1.1",
     "next": "15.5.29",
     "react": "19.1.0",

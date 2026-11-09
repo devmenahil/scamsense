@@ -17,6 +17,9 @@ const optionalUrl = z.preprocess((v) => (v === "" ? undefined : v), z.url().opti
 export const publicEnvSchema = z.object({
   NEXT_PUBLIC_APP_URL: optionalUrl,
   NEXT_PUBLIC_SUPABASE_URL: optionalUrl,
+  /** New-style Supabase "publishable" key (sb_publishable_…). Preferred. */
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: optionalString,
+  /** Legacy anon key. Accepted as a fallback when no publishable key is set. */
   NEXT_PUBLIC_SUPABASE_ANON_KEY: optionalString,
   NEXT_PUBLIC_PAYPAL_CLIENT_ID: optionalString,
 });
@@ -45,6 +48,17 @@ export const serverEnvSchema = publicEnvSchema.extend({
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
+
+/**
+ * Supabase URL + browser-safe key, or null when Supabase is not configured. The publishable key is preferred; the
+ * legacy anon key is a fallback. Both are public by design (RLS protects the data). The service-role key is never
+ * used here.
+ */
+export function supabasePublicConfig(env: PublicEnv): { url: string; key: string } | null {
+  const key = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!env.NEXT_PUBLIC_SUPABASE_URL || !key) return null;
+  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key };
+}
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 
 /** Parses an env record and throws a readable error listing every invalid key (values are never printed). */

@@ -1,14 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getModule, MODULES } from "@/content/modules";
-import { DEMO_ATTEMPT_ID, DEMO_MODULE_STATUS, DEMO_SCENARIOS } from "@/lib/demo/demoData";
+import { getModule } from "@/content/modules";
+import type { ScenarioProgress } from "@/lib/domain/progression";
+import { calculateStartingFunds } from "@/lib/domain/trainingFunds";
+import { getCurrentProgress } from "@/lib/progress/current";
+import { ProgressUnavailable } from "@/components/dashboard/ProgressUnavailable";
+import { StartModuleButton } from "@/components/dashboard/StartModuleButton";
 import { StatusLabel } from "@/components/dashboard/StatusLabel";
+import { LedgerHistory, money, TrainingFundsCard } from "@/components/dashboard/TrainingFunds";
+import { ProfileUnavailable } from "@/components/profile/ProfileUnavailable";
 import { Icon } from "@/components/icons/Icon";
-import { Badge } from "@/components/ui/Badge";
 import { ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { DemoNotice } from "@/components/ui/DemoNotice";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { IconTile } from "@/components/ui/IconTile";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -16,9 +20,8 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 
 type Props = { params: Promise<{ moduleKey: string }> };
 
-export function generateStaticParams() {
-  return MODULES.map((m) => ({ moduleKey: m.key }));
-}
+// Per-user page (progress + Training Funds): always rendered on request, never prerendered.
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const m = getModule((await params).moduleKey);
@@ -28,16 +31,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ModuleOverviewPage({ params }: Props) {
   const m = getModule((await params).moduleKey);
   if (!m) notFound();
+  const result = await getCurrentProgress(`/modules/${m.key}`);
+  if (result.status === "missing" || result.status === "error")
+    return <ProfileUnavailable reason={result.status} />;
 
-  const status = DEMO_MODULE_STATUS[m.key];
-  const scenarios = DEMO_SCENARIOS[m.key];
-  const completed = scenarios.filter((s) => s.status === "completed").length;
-  // One primary action per screen: the first scenario that still needs playing.
-  const nextScenario = scenarios.find((s) => s.status !== "completed");
-
-  return (
-    <div className="container-page py-8 sm:py-12">
-      <DemoNotice className="mb-6" />
+  const header = (
+    <>
       <Link
         href="/modules"
         className="mb-4 inline-flex min-h-11 items-center gap-1.5 rounded-pill pr-3 font-heading font-extrabold hover:underline"
@@ -50,79 +49,169 @@ export default async function ModuleOverviewPage({ params }: Props) {
         title={m.title}
         description={m.summary}
       />
+    </>
+  );
 
-      {status === "locked" ? (
+  if (result.status === "progress_unavailable") {
+    return (
+      <div className="container-page py-8 sm:py-12">
+        {header}
+        <ProgressUnavailable className="mt-8" href={`/modules/${m.key}`} />
+      </div>
+    );
+  }
+
+  const progress = result.snapshot.progression.modules.find((x) => x.module.key === m.key)!;
+  const moduleResult = result.snapshot.modules[m.key];
+
+  if (!progress.unlocked) {
+    return (
+      <div className="container-page py-8 sm:py-12">
+        {header}
         <EmptyState
           className="mt-8"
           icon="lock"
           title="This module is locked"
-          description={`Finish both scenarios in Module ${m.order - 1} to unlock ${m.title}.`}
+          description={`Finish both scenarios in Module ${m.order - 1} to unlock ${m.title}. No minimum score is needed.`}
           action={
             <ButtonLink href="/dashboard" variant="secondary">
               Back to dashboard
             </ButtonLink>
           }
         />
-      ) : (
-        <>
-          <ProgressBar
-            className="mt-8 max-w-md"
-            value={completed}
-            max={scenarios.length}
-            label="Module progress"
-            valueText={`${completed} of ${scenarios.length} scenarios`}
-          />
+      </div>
+    );
+  }
 
-          <ul className="mt-8 grid gap-5 md:grid-cols-2">
-            {scenarios.map((s) => (
-              <Card as="li" key={s.key} className="flex flex-col">
-                <div className="flex items-start justify-between gap-3">
-                  <IconTile name={s.status === "completed" ? "check" : "play"} accent={false} tone="mist" />
-                  <StatusLabel status={s.status} />
-                </div>
-                <h2 className="mt-4 text-subheading font-bold">{s.label}</h2>
-                <p className="mt-1 flex items-center gap-2 text-small">
-                  <Badge tone="outline">{s.environment}</Badge>
-                </p>
-                {/* Only the neutral one-line intro is shown before play (R9). */}
-                <p className="mt-3 flex-1 text-teal/90">{s.introLine}</p>
-                <div className="mt-5">
-                  {s.status === "completed" ? (
-                    <ButtonLink href={`/play/${DEMO_ATTEMPT_ID}/results`} variant="secondary" fullWidth>
-                      View results
-                    </ButtonLink>
-                  ) : (
-                    <ButtonLink
-                      href={`/play/${DEMO_ATTEMPT_ID}`}
-                      variant={s === nextScenario ? "primary" : "secondary"}
-                      fullWidth
-                    >
-                      {s.status === "in_progress" ? "Resume scenario" : "Start scenario"}
-                    </ButtonLink>
-                  )}
-                </div>
-              </Card>
-            ))}
-          </ul>
+  const preview = calculateStartingFunds(result.profile);
 
-          <Card tone="mist" className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
-            <IconTile name="award" />
+  return (
+    <div className="container-page py-8 sm:py-12">
+      {header}
+      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_21rem]">
+        <div className="flex min-w-0 flex-col gap-8">
+          {!progress.started ? (
+            <Card tone="mist" as="section" aria-labelledby="begin-heading">
+              <h2 id="begin-heading" className="text-subheading font-bold">
+                Before you begin
+              </h2>
+              <p className="mt-2">
+                Starting this module sets your Training Funds to{" "}
+                <strong className="font-heading font-extrabold">
+                  {money(preview.startingFundsMinor, preview.currency)}
+                </strong>
+                {preview.basis === "income_bracket"
+                  ? ", based on the income range in your profile."
+                  : ", the default training budget."}
+              </p>
+              <p className="mt-2 text-small text-teal/90">
+                It&apos;s fictional practice money, separate from any PayPal balance. Funds reset at the start
+                of each module, and the results of earlier modules are kept.
+              </p>
+              <div className="mt-5">
+                <StartModuleButton moduleKey={m.key} label={`Start module ${m.order}`} />
+              </div>
+            </Card>
+          ) : (
+            <ProgressBar
+              className="max-w-md"
+              value={progress.completedScenarios}
+              max={progress.scenarios.length}
+              label="Module progress"
+              valueText={`${progress.completedScenarios} of ${progress.scenarios.length} scenarios`}
+            />
+          )}
+
+          <section aria-labelledby="scenarios-heading">
+            <h2 id="scenarios-heading" className="text-subheading font-bold">
+              Scenarios
+            </h2>
+            <p className="mt-1 text-small text-teal/85">Play them in either order.</p>
+            <ul className="mt-4 grid gap-5 md:grid-cols-2">
+              {progress.scenarios.map((s) => (
+                <ScenarioSlotCard key={s.key} slot={s} started={progress.started} />
+              ))}
+            </ul>
+            <p className="mt-4 text-small">
+              Want a feel for it first?{" "}
+              <Link href="/play/demo" className="font-semibold underline decoration-2 underline-offset-4">
+                Preview the scenario player with demonstration content
+              </Link>
+              .
+            </p>
+          </section>
+
+          <Card tone="white" as="section" className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <IconTile name="award" accent={false} />
             <div className="min-w-0 flex-1">
               <h2 className="font-heading text-lg font-extrabold">Module completion</h2>
               <p className="text-small text-teal/90">
-                Finish both scenarios to earn the {m.title} badge, preview your certificate, and download your
-                analysis report.
+                {progress.status === "completed"
+                  ? `You finished ${m.title} with ${moduleResult.points} of ${moduleResult.maxPoints} points.`
+                  : `Finish both scenarios to earn the ${m.badgeName} badge, preview your certificate, and download your analysis report.`}
               </p>
             </div>
-            <Link
-              href={`/modules/${m.key}/complete`}
-              className="inline-flex min-h-11 items-center gap-1.5 font-heading font-extrabold underline decoration-2 underline-offset-4"
-            >
-              Preview completion page
-            </Link>
+            {progress.status === "completed" && (
+              <Link
+                href={`/modules/${m.key}/complete`}
+                className="inline-flex min-h-11 items-center gap-1.5 font-heading font-extrabold underline decoration-2 underline-offset-4"
+              >
+                Certificate and report
+                <Icon name="arrow-right" className="size-4" />
+              </Link>
+            )}
           </Card>
-        </>
-      )}
+        </div>
+
+        {moduleResult.wallet && (
+          <aside className="flex min-w-0 flex-col gap-5" aria-label="Training Funds for this module">
+            <TrainingFundsCard
+              wallet={{
+                kind: progress.status === "completed" ? "closed" : "active",
+                moduleKey: m.key,
+                summary: moduleResult.wallet,
+              }}
+            />
+            <Card as="section" aria-labelledby="ledger-heading">
+              <h2 id="ledger-heading" className="font-heading text-lg font-extrabold">
+                Training Funds history
+              </h2>
+              <p className="mt-1 text-caption text-teal/85">
+                Every change is its own entry. Nothing is overwritten.
+              </p>
+              <div className="mt-2">
+                <LedgerHistory entries={moduleResult.ledger} moduleKey={m.key} />
+              </div>
+            </Card>
+          </aside>
+        )}
+      </div>
     </div>
+  );
+}
+
+function ScenarioSlotCard({ slot, started }: { slot: ScenarioProgress; started: boolean }) {
+  const note =
+    slot.status === "completed"
+      ? "Replays are practice: they don't change your score, progress, or Training Funds."
+      : started
+        ? "This scenario opens in the next build phase."
+        : "Start the module to set up your Training Funds first.";
+  return (
+    <Card as="li" className="flex flex-col">
+      <div className="flex items-start justify-between gap-3">
+        <IconTile name={slot.status === "completed" ? "check" : "play"} accent={false} tone="mist" />
+        <StatusLabel status={slot.status} />
+      </div>
+      <p className="mt-4 label-eyebrow text-teal/80">Scenario {slot.position}</p>
+      <h3 className="mt-1 text-subheading font-bold">{slot.title}</h3>
+      {slot.completedAttempts > 1 && (
+        <p className="mt-1 text-caption text-teal/85">Played {slot.completedAttempts} times</p>
+      )}
+      <p className="mt-3 flex flex-1 items-start gap-2 text-small text-teal/90">
+        <Icon name="info" className="mt-0.5 size-4" />
+        {note}
+      </p>
+    </Card>
   );
 }

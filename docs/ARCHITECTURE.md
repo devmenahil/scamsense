@@ -1,6 +1,6 @@
 # ScamSense — Technical Architecture
 
-Status: Phase 0 baseline. Read together with `CLAUDE.md` (rules), `PRODUCT_SPEC.md` (behavior), and `DATA_MODEL.md`.
+Status: updated for Phase 3 (Step 5). Read together with `CLAUDE.md` (rules), `PRODUCT_SPEC.md` (behavior), and `DATA_MODEL.md`.
 
 ## 1. System overview
 
@@ -95,11 +95,14 @@ Route groups: `(marketing)` public, `(auth)` sign-in/up, `(app)` authenticated a
 | Route | Access | Purpose |
 |---|---|---|
 | `/` | Public | Landing: value proposition, how it works, CTA |
-| `/sign-up` | Public | Email/password + 18+ age bracket + confirmation (R2) |
-| `/sign-in` | Public | Sign in |
-| `/onboarding` | Auth, not onboarded | Profile + preferred currency (R3, R4) |
-| `/dashboard` | App | Modules, progress, training funds, history, badges |
-| `/modules/[moduleKey]` | App, unlocked | Module overview + its two scenarios |
+| `/sign-up` | Public (guest-only) | Display name, email/password, optional age bracket, required "at least 18" checkbox (R2) |
+| `/forgot-password` | Public | Request a Supabase password-reset email |
+| `/reset-password` | Auth (recovery session) | Choose a new password |
+| `/auth/confirm` | Public (route handler) | Landing for Supabase email links (`code` or `token_hash`); sets the session |
+| `/sign-in` | Public (guest-only) | Sign in; honours a same-site `?next=` |
+| `/onboarding` | Auth, not onboarded | Three steps; steps 1–2 saved as you go; resumes at the first incomplete step (R3, R4) |
+| `/dashboard` | App | Real progress (Phase 3): current module, overall progress, Training Funds, score, badges, modules, goal, certificate/report access, past results |
+| `/modules/[moduleKey]` | App | Module overview: locked notice, or "Start module N" (opens the Training Funds period), scenario slot statuses, Training Funds card + ledger history |
 | `/play/[attemptId]` | App, owner | **Immersive scenario**: intro → explore → decide → (pay) → justify |
 | `/play/[attemptId]/results` | App, owner, attempt COMPLETED | Feedback, wallet impact, AI comment, **Reveal the Red Flags** |
 | `/modules/[moduleKey]/complete` | App, module completed | Badge, certificate preview, email form, report download |
@@ -107,7 +110,7 @@ Route groups: `(marketing)` public, `(auth)` sign-in/up, `(app)` authenticated a
 | `/sensei` | App | Sensei Kenshi full-page chat (also a floating panel, Phase 11) |
 | `/modules` | App | Index of the three modules with lock states (primary nav "Modules") |
 | `/certificates` | App | Badges, certificate status, and report access per module (primary nav "Certificates") |
-| `/profile` | App | "My Profile": view profile + preferred currency; edit via the onboarding form (replaces the earlier `/settings` name). Currency changes apply from the next module start |
+| `/profile` | App | "My Profile": view and edit every profile field in place (shared field components with onboarding), sign out. Currency changes apply from the next module start |
 
 `middleware.ts` refreshes the Supabase session and redirects unauthenticated users to `/sign-in` and
 non-onboarded users to `/onboarding`. Authorization for specific resources (ownership, unlocks, attempt state) is
@@ -122,18 +125,29 @@ before completion.
 All routes return JSON (except the PDF), validate input with Zod, call `requireUser()`, and check ownership.
 The error shape is `{ error: { code, message } }`.
 
+### Auth (Supabase Auth via the user's cookie session; no service-role key)
+| Method & path | Body | Effect |
+|---|---|---|
+| `POST /api/auth/sign-up` | `{displayName, email, password, ageBracket?, ageConfirmed: true}` | `supabase.auth.signUp` with metadata → trigger creates the profile. Returns `{status: "signed_in" \| "confirmation_required"}`. Duplicate email → 409 |
+| `POST /api/auth/sign-in` | `{email, password}` | Sets session cookies. Returns `{onboarded}` |
+| `POST /api/auth/sign-out` | — | Ends this browser's session (`scope: "local"`) |
+| `POST /api/auth/forgot-password` | `{email}` | Sends a reset link; identical response whether or not the account exists |
+| `POST /api/auth/update-password` | `{password, confirmPassword}` | Requires a session (the recovery session from the email link) |
+
 ### Profile and progress
 | Method & path | Body / params | Returns |
 |---|---|---|
-| `GET /api/profile` | — | Profile |
-| `PUT /api/profile` | Profile fields (onboarding + edits) | Profile. Age bracket must be adult and the currency must be in the allowlist |
+| `GET /api/profile` | — | Own profile (selected by session user id; RLS also enforces it) |
+| `PATCH /api/profile` | Onboarding step 1–2 fields only (`.strict()`) | Profile. Partial save while onboarding |
+| `PUT /api/profile` | Complete profile (`.strict()`); goal amount as a major-unit string, converted server-side to minor units | Profile, `onboarding_completed = true`. Unknown keys (e.g. `user_id`) → 400 |
 | `GET /api/config/currencies` | — | Supported currency list (from the server allowlist) |
-| `GET /api/progress` | — | Modules with lock state, scenario statuses, current wallet, history, badges |
+| `GET /api/progress` | — | `{progress}`: the `ProgressSnapshot` (module lock states, scenario statuses with start/resume/replay actions, current Training Funds or next-module preview, per-module ledger + summary, scores, badge dates). Read through RLS. 403 until onboarded |
+| `POST /api/modules/[moduleKey]/start` | — (no body) | Opens the module's Training Funds period: server computes currency + amount from the saved profile, checks the unlock, calls `start_module_run`. 201 new, 200 already started (idempotent), 409 locked, 404 unknown |
 
 ### Scenario attempts
 | Method & path | Body | Returns / effect |
 |---|---|---|
-| `POST /api/scenarios/[scenarioKey]/attempts` | — | Creates an attempt (or returns the open one). Enforces module unlock and opens a module run (wallet reset) on the first scenario of a module. Runs personalization (Gemini or fallback) and returns `{attemptId}` |
+| `POST /api/scenarios/[scenarioKey]/attempts` | — | *(Phase 4)* Creates a first attempt or a replay, or returns the open one (`planScenarioStart` + `create_scenario_attempt`). The module must already be started. Runs personalization (Gemini or fallback) and returns `{attemptId}` |
 | `GET /api/attempts/[id]` | — | Client-safe view: state, intro line, personalized **render** data, decision options, payable amount (if any). **Never the answer key** |
 | `POST /api/attempts/[id]/events` | `{type: "START" \| "DECISION_SELECTED" \| "DECISION_CLEARED"}` | Applies a state-machine transition (§7) |
 | `POST /api/attempts/[id]/decision` | `{decisionId}` | Commits a non-payment decision → `AWAITING_JUSTIFICATION`. Pay decisions are rejected here: they commit only via capture |
@@ -226,6 +240,9 @@ Invariants:
   A stuck `EVALUATING` attempt is re-evaluated idempotently on the next `GET`.
 - Nothing from the answer key is serialized for any state except `COMPLETED` (R10, R15).
 - Module progression is recomputed from `COMPLETED` attempts. It is never stored as a counter that could drift.
+- Replays (Phase 3 decision): a completed scenario can be played again as a new attempt (`attempt_number` + 1,
+  `is_replay`). Only attempt 1 is scored for progression, totals, and the ledger; at most one unfinished attempt per
+  scenario exists at a time (partial unique index), so "start" on an unfinished scenario always resumes.
 
 ## 8. Deterministic rules vs. Gemini-generated content
 
@@ -274,11 +291,19 @@ context includes:
 
 Off-topic or unsafe requests get a polite redirect. No classifier is used (R23).
 
-### 8.4 Scoring (deterministic)
-- `decisionCorrect`: boolean from the answer key.
-- `reasoningCoverage` = Σ weight(addressed evidence) / Σ weight(all evidence), 0–100.
-- The displayed outcome is qualitative ("Nice catch!" / "Look again"), driven by `decisionCorrect`, with coverage
-  shown as "You spotted N of M key clues." No numeric grade beyond this unless requested later.
+### 8.4 Scoring (deterministic, `src/lib/domain/scoring.ts`, Phase 3)
+100 points per scenario, integer maths with half-up rounding, stored once per completed attempt in `scenario_scores`
+with `scoring_version`:
+- **Decision 40**: `decisionId ∈ correctDecisionIds` → 40, else 0.
+- **Reasoning 30**: 30 × Σ weight(addressed evidence) / Σ weight(all evidence). Addressed IDs come from Gemini
+  (Phase 6) or the keyword fallback; unknown IDs are dropped before scoring. This is the "fixed rubric" (R13).
+- **Verification 20**: 20 × Σ weight(verification actions performed) / Σ weight(all verification actions), from
+  engine-recorded in-environment events (Phase 4).
+- **Payment safety 10**: 10 unless any `unsafeActionIds` (paying the fraudulent party, entering card details on a
+  look-alike page, …) appears in the decision or recorded actions.
+The rubric (`ScoringRubric`) is part of each server-only answer key. `scoreScenario` requires a real
+`ReasoningAssessment`; nothing fabricates one. The results screen still leads with qualitative feedback (praise
+first, R37); points are shown alongside.
 
 ### 8.5 Fallback evaluation
 Case-insensitive keyword/phrase matching of the justification against each evidence item's `keywords`, followed by
@@ -309,7 +334,9 @@ POST /api/paypal/orders/{orderId}/capture
   • POST /v2/checkout/orders/{id}/capture (idempotent request id)
   • on capture status COMPLETED, verify amount & currency equal the stored values, then in ONE DB transaction:
       payment_transactions → CAPTURED (capture_id, paypal_status)
-      wallet_ledger += PAYMENT debit
+      scored attempt (attempt_number 1): wallet_ledger += PAYMENT debit (record_training_payment)
+      practice replay (attempt_number > 1): NO ledger entry; the capture stays on the practice
+        payment_transactions row only (official Training Funds untouched)
       attempt.decision = pay decision; state → AWAITING_JUSTIFICATION
   • on DECLINED/other → FAILED; attempt → EXPLORING (user may retry or decide otherwise)
 onCancel() → POST .../cancel → CANCELLED; attempt → EXPLORING
@@ -319,30 +346,60 @@ onError()  → FAILED; friendly message; attempt → EXPLORING
 `payment_transactions.status`: `CREATED → CAPTURED | CANCELLED | FAILED`. Captured Sandbox payments are never refunded
 by the app (no refund feature, R30). Scenario outcome text describes consequences only within the fiction.
 
-**Currency:** The JS SDK `currency` parameter must equal the module run's currency. The allowlist
-(`src/lib/domain/currency.ts`) holds `{code, minorUnitDigits}` and is transcribed from PayPal's official currency-codes
-documentation. It is limited to currencies verified to work in Sandbox Checkout for our account setup, with USD
-always present and default. Currencies with zero decimals are handled by `minorUnitDigits`.
+**Replays (Step 5 review decision):** a replay is a full new attempt and may run a genuine Sandbox checkout again. The
+same flow applies with these differences: the order is created for the replay's own attempt ID and a fresh
+`request_id` (PayPal-Request-Id), so it can never collide with the original attempt's order; the amount is the same
+slot percentage of the original module run's starting funds (practice amount, same currency); on capture the
+`payment_transactions` row (`is_practice = true`) records the verified outcome but `record_training_payment` is not
+called (the database rejects replays with `replay_not_charged` as a backstop). Duplicate captures are prevented by
+the idempotent request id, the unique `paypal_order_id`/`paypal_capture_id`, at most one CAPTURED row per attempt, and
+the attempt state check (`PAYMENT_PENDING` only). Cancelled or failed orders never count as payments.
+
+**Currency:** The JS SDK `currency` parameter must equal the module run's currency. `src/lib/domain/currency.ts` is
+the single currency module for onboarding, dashboard, scenarios, wallet, checkout, impact calculations and reports.
+It lists all 24 REST currencies from PayPal's official currency-codes page (transcribed 2026-11-09; page updated
+2026-08-17) with `minorUnitDigits` (HUF/JPY/TWD are zero-decimal) and the in-country-only flag (BRL/CNY/MYR).
+Merchant-specific Sandbox support has not been verified (no PayPal credentials yet), and PayPal support must not be
+assumed, so **USD is the only enabled currency** (Step 5 review; migration `20261109140000_usd_only_currency.sql`).
+To enable another after an end-to-end Sandbox test: it needs a reference rate in `src/content/exchangeRates.ts`, then
+flip `enabled` and add a migration updating `profiles_preferred_currency_check` (tests fail if they diverge).
+Validation happens in the browser, the API (Zod), and the database (check constraint); the server also falls back to
+USD for any non-allowlisted value when computing funds. Validation uses `getCurrency` (allowlist only); display and
+arithmetic of stored amounts use `getPayPalCurrency` (any documented currency), so records made in a later-disabled
+currency still render. Formatting is locale-aware (`formatMoney`).
+
+**Conversion:** the Training Funds baseline is in USD (`src/content/trainingFunds.ts`). `src/lib/domain/exchange.ts`
+converts it with fixed ECB euro reference rates (`src/content/exchangeRates.ts`: source URL, reference date
+2026-11-06) using the cross rate X/EUR ÷ USD/EUR in BigInt arithmetic, half-up: starting funds to whole units of the
+target currency, other amounts to its PayPal minor unit. No live FX API; nothing is presented as a market rate.
 
 ## 10. Fictional wallet lifecycle
 
 ```
-Module unlocked → user starts first scenario of the module
-   └─ create module_run(currency = profile.preferred_currency, starting_funds_minor = config × 10^digits)
+Module unlocked → user presses "Start module N" (POST /api/modules/[key]/start)
+   └─ start_module_run(currency = profile.preferred_currency,
+                       starting_funds_minor = calculateStartingFunds(income bracket) in minor units)
       wallet_ledger: MODULE_START  +starting_funds        (balance = starting funds)  ← R20 reset
-Scenario pay decision captured
-      wallet_ledger: PAYMENT       −amount                (balance_after recorded)
-Legitimate purchase completed (the item is received in the story)
-      no balance change beyond the payment. The debrief marks it as a successful purchase (authored)
-Module completed
-      module_run.closing_balance_minor frozen; historical ledger kept forever
+Scenario pay decision captured (Phase 5)
+      record_training_payment(amount = scenarioAmountMinor(slot %, starting funds), idempotency key)
+      wallet_ledger: PAYMENT −amount, classification 'pending' (balance_after recorded)
+Attempt completed (Phase 6, complete_scenario_attempt)
+      the attempt's PAYMENT is classified once: 'spending' (legitimate purchase) or 'fraud_loss' (scam)
+Module completed (both scenarios' first attempts completed, same transaction)
+      module_run.completed_at + closing_balance_minor frozen; historical ledger kept forever
 Next module
       new module_run with its own MODULE_START (fresh balance). Previous runs untouched
+Replay (practice attempt)
+      may run a real Sandbox checkout (Phase 5) recorded on payment_transactions (is_practice) only;
+      never charged to the ledger; the run (open or closed) is never touched
 ```
 
 - Balance is the sum of the run's ledger entries. `balance_after` is stored for reporting and checked in tests.
-- A payment can never push the balance below zero. Percentages are authored so the sum in a module is ≤100%, and the
-  server re-checks.
+- A payment can never push the balance below zero (domain check + `record_training_payment` + `balance_after ≥ 0`
+  constraint). Percentages per module sum to ≤100% (tested).
+- Duplicate deductions are impossible: unique idempotency key, one PAYMENT per attempt (partial unique index), and
+  the run row is locked (`for update`) while a payment is written.
+- Nothing about legitimacy exists in the database during play: payments stay `pending` until completion (R10).
 - Changing preferred currency mid-module does not affect the open run. It applies to the next module run.
 
 ## 11. Certificates, reports, email
@@ -359,10 +416,16 @@ Next module
 
 ## 12. Security and privacy
 
-- Supabase RLS on every table: users can `select` only their own rows. All writes go through route handlers using
-  the user's session (RLS-enforced) or, for multi-table transactions, a Postgres function (`security definer`) that
-  re-checks `auth.uid()`.
-- `SUPABASE_SERVICE_ROLE_KEY` is used only in server code and only where documented.
+- Supabase RLS on every table: users can `select` only their own rows. Profile edits go through route handlers using
+  the user's session (RLS + column grants).
+- **Gameplay writes use a trusted writer (Phase 3 decision).** Module runs, attempts, ledger entries, scores, and
+  completions are written only by `security definer` functions that are executable by `service_role` alone, called
+  from server code via `src/lib/supabase/admin.ts` with the user id from the verified session. A browser holding the
+  publishable key therefore cannot award itself points, complete scenarios, or move Training Funds (R32). Functions
+  re-check ownership, unlock order, attempt state, and balances; triggers keep the ledger and scores append-only,
+  decisions/justifications write-once, and COMPLETED reachable only through `complete_scenario_attempt`.
+- `SUPABASE_SERVICE_ROLE_KEY` (legacy service-role JWT or new `sb_secret_…` key) is used only in server code and only
+  for those gameplay writes. Without it, reads keep working and gameplay writes return a calm 503.
 - Rate limits (simple DB-backed counters): chat, certificate email, attempt creation.
 - No real credentials are ever requested. Simulation inputs are inert (R33). CSP restricts `frame-src` and
   `script-src` to self + PayPal SDK domains.
@@ -401,3 +464,56 @@ Next module
 - **Focus:** global 3px teal `:focus-visible` outline; white inside `.on-dark` surfaces.
 - **Class overrides:** `cn()` is `clsx` only. Do not pass a component a class that conflicts with its own base
   utilities; control visibility with a wrapper element.
+
+## 16. Authentication and sessions (Phase 2 / Step 4)
+
+- **Clients:** `@supabase/ssr` server client (`src/lib/supabase/server.ts`) bound to the request cookies, using the
+  publishable key (`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, falling back to `NEXT_PUBLIC_SUPABASE_ANON_KEY`). Every query
+  runs as the signed-in user, so RLS applies. No browser Supabase client and no service-role key are used.
+- **Middleware** (`src/middleware.ts`): refreshes the session cookie on every request (`getClaims`), then applies the
+  pure rules in `src/lib/auth/routes.ts`: signed-out → `/sign-in?next=…` (with `notice=expired` when a stale auth
+  cookie is present); signed-in but not onboarded → `/onboarding`; onboarded users leave `/onboarding` and the auth
+  pages. If onboarding state can't be read, it does not redirect (the page shows a calm error) — rules are unit-tested
+  to settle within one hop (no loops). API routes are never redirected; they return 401 JSON.
+- **Second guard:** the `(app)` layout calls `requireUser()` (Supabase `getUser`, verified with the Auth server) and is
+  `force-dynamic`; app pages call `requireOnboardedProfile()`. Private HTML is never rendered without a session; the
+  existing `loading.tsx` covers the wait.
+- **Email links:** sign-up confirmation and password reset land on `/auth/confirm`, which supports PKCE `code` and
+  `token_hash` flows and only redirects to same-site paths (`safeNextPath`).
+- **Errors:** `src/lib/auth/errors.ts` maps Supabase Auth codes to calm messages; `src/lib/api/server.ts` maps
+  Postgres/PostgREST codes. Responses never include stack traces, SQL, or keys; logs carry error codes only (no
+  emails, passwords, or bodies).
+
+## 17. Progression, Training Funds, and scoring (Phase 3 / Step 5)
+
+- **Config:** `src/content/modules.ts` (3 modules × 2 slots with official titles, badge names, payment basis
+  points), `src/content/trainingFunds.ts` (income bracket → USD baseline, 3,000 default), and
+  `src/content/exchangeRates.ts` (fixed reference rates). Change values there only; tests guard the
+  structure and `progressionMigration.test.ts` guards the SQL copies of keys, states, and score ranges.
+- **Domain (pure, tested):** `money.ts` → `trainingFunds.ts` → `wallet.ts`, `progression.ts`, `scoring.ts`, and
+  `progress.ts`, which assembles the `ProgressSnapshot` used by `/api/progress` and every progress page.
+- **Data access:** `src/lib/progress/server.ts` (reads via the session client, writes via the trusted writer),
+  `src/lib/progress/current.ts` (cached per request for pages, with a calm `progress_unavailable` state).
+- **Connection to the next phases:**
+  - Phase 4 attempt creation: `planScenarioStart(snapshot.progression, key)` decides start/resume/replay, then
+    `create_scenario_attempt`. The engine records verification and unsafe action IDs for scoring.
+  - Phase 5 capture: amount = `scenarioAmountMinor(key, run.starting_funds_minor)` (also the PayPal order amount);
+    for the scored attempt, `record_training_payment` with the PayPal-Request-Id as idempotency key inside the
+    capture flow; for a replay, only the practice `payment_transactions` row (see §9).
+  - Phase 6 completion: evaluator → `ReasoningAssessment` → `scoreScenario(rubric, behavior, assessment)` →
+    `complete_scenario_attempt` (score + payment classification from the answer key + module completion, one
+    transaction). Phase 9 hangs badge/certificate rows off the module completion.
+
+### 17.1 Security and idempotency guarantees (verified in the Step 5 review)
+- Browser roles (`anon`, `authenticated`) can only SELECT their own rows in the four gameplay tables. They cannot
+  INSERT/UPDATE/DELETE them or EXECUTE any gameplay function (live-tested for both roles and all four functions).
+- The secret key lives only in `src/lib/supabase/admin.ts` (`import "server-only"`), is never `NEXT_PUBLIC_`, is never
+  logged, and is absent from the client bundle (checked after `next build`).
+- Route handlers authenticate with `supabase.auth.getUser()` (verified by the Auth server), take the user id only from
+  that session, require completed onboarding, and accept no amounts, currencies, scores, or user ids from the body.
+- Unlock order is enforced three times: domain (`assertModuleUnlocked`), API (409), and `start_module_run` (database).
+  A URL to a locked module renders the locked state; no data or action is exposed.
+- Retries are safe: `start_module_run` and `complete_scenario_attempt` are idempotent; ledger payments are unique per
+  idempotency key and per attempt; scores are unique per attempt and immutable (no UPDATE grant for anyone), so a
+  repeat call can never add or overwrite points.
+- Replays (practice attempts) cannot change official scores, progression, badges, the module run, or the ledger.

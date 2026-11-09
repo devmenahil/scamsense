@@ -1,4 +1,4 @@
-import type { ModuleStatus, ScenarioStatus } from "@/lib/demo/demoData";
+import type { ModuleStatus, ScenarioStatus } from "@/lib/domain/progression";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 

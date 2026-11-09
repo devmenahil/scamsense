@@ -1,5 +1,6 @@
 /**
- * DEMONSTRATION DATA — Phase 1 page shells only.
+ * DEMONSTRATION DATA — the demo scenario player and results shells only (/play/demo).
+ * Dashboard, modules, and certificates use real progress since Phase 3 (Step 5).
  *
  * Nothing here is real progress, money, or evaluation. Every screen that renders this data shows the
  * <DemoNotice /> label. Phase 2+ replaces these values with server data (GET /api/progress etc.).
@@ -7,8 +8,7 @@
  */
 import type { ModuleKey } from "@/content/modules";
 
-export type ModuleStatus = "locked" | "available" | "in_progress" | "completed";
-export type ScenarioStatus = "not_started" | "in_progress" | "completed";
+type ScenarioStatus = "not_started" | "in_progress" | "completed";
 
 export interface DemoScenario {
   key: string;
@@ -19,29 +19,12 @@ export interface DemoScenario {
   status: ScenarioStatus;
 }
 
-export const DEMO_USER = {
-  displayName: "Alex Rivera",
-  ageBracket: "25–34",
-  lifeStage: "Employed",
-  paymentExperience: "Regular",
-  financialGoal: "Build an emergency fund",
-  financialActivities: ["Online shopping", "Paying bills", "Sending money to family"],
-  incomeBracket: "Prefer not to say",
-  currency: "USD",
-} as const;
-
 export const DEMO_WALLET = {
   currency: "USD",
   minorUnitDigits: 2,
   balanceMinor: 50_000,
   startingMinor: 50_000,
 } as const;
-
-export const DEMO_MODULE_STATUS: Record<ModuleKey, ModuleStatus> = {
-  "spot-the-trap": "in_progress",
-  "trust-under-pressure": "locked",
-  "outsmart-the-scam": "locked",
-};
 
 export const DEMO_SCENARIOS: Record<ModuleKey, DemoScenario[]> = {
   "spot-the-trap": [

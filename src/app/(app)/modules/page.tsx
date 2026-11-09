@@ -1,31 +1,32 @@
 import type { Metadata } from "next";
-import { MODULES } from "@/content/modules";
-import { DEMO_MODULE_STATUS, DEMO_SCENARIOS } from "@/lib/demo/demoData";
+import { getCurrentProgress } from "@/lib/progress/current";
 import { ModuleCard } from "@/components/dashboard/ModuleCard";
-import { DemoNotice } from "@/components/ui/DemoNotice";
+import { ProgressUnavailable } from "@/components/dashboard/ProgressUnavailable";
+import { ProfileUnavailable } from "@/components/profile/ProfileUnavailable";
 import { PageHeader } from "@/components/ui/PageHeader";
 
 export const metadata: Metadata = { title: "Modules" };
 
-export default function ModulesPage() {
+export default async function ModulesPage() {
+  const result = await getCurrentProgress("/modules");
+  if (result.status === "missing" || result.status === "error")
+    return <ProfileUnavailable reason={result.status} />;
   return (
     <div className="container-page py-8 sm:py-12">
-      <DemoNotice className="mb-6" />
       <PageHeader
         eyebrow="Modules"
         title="Three modules, one step at a time"
-        description="Each module has two immersive scenarios. Finish both to earn the module badge and unlock the next one."
+        description="Each module has two immersive scenarios. Finish both to earn the module badge and unlock the next one. You can replay finished scenarios any time."
       />
-      <div className="mt-8 flex flex-col gap-4">
-        {MODULES.map((m) => (
-          <ModuleCard
-            key={m.key}
-            module={m}
-            status={DEMO_MODULE_STATUS[m.key]}
-            scenarios={DEMO_SCENARIOS[m.key]}
-          />
-        ))}
-      </div>
+      {result.status === "progress_unavailable" ? (
+        <ProgressUnavailable className="mt-8" href="/modules" />
+      ) : (
+        <div className="mt-8 flex flex-col gap-4">
+          {result.snapshot.progression.modules.map((m) => (
+            <ModuleCard key={m.module.key} progress={m} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

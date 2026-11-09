@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getModule, MODULES } from "@/content/modules";
-import { DEMO_USER } from "@/lib/demo/demoData";
+import { getCurrentProfile } from "@/lib/auth/session";
 import { Logo, LogoSymbol } from "@/components/brand/Logo";
 import { CertificateEmailForm } from "@/components/certificate/CertificateEmailForm";
 import { Icon } from "@/components/icons/Icon";
@@ -30,6 +30,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ModuleCompletePage({ params }: Props) {
   const m = getModule((await params).moduleKey);
   if (!m) notFound();
+  const profile = await getCurrentProfile();
+  const displayName = profile.status === "ok" ? profile.profile.displayName : "Your name";
 
   return (
     <div className="container-page py-8 sm:py-12">
@@ -40,7 +42,7 @@ export default async function ModuleCompletePage({ params }: Props) {
       <PageHeader eyebrow={`Module ${m.order} · ${m.difficulty}`} title={`You finished ${m.title}`} />
 
       <FeedbackBanner tone="success" title="Module complete!" className="mt-6">
-        You earned the {m.title} badge.
+        You earned the {m.badgeName} badge.
       </FeedbackBanner>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
@@ -59,7 +61,7 @@ export default async function ModuleCompletePage({ params }: Props) {
               <p className="mt-6 label-eyebrow text-teal/80">Certificate of completion</p>
               <p className="mt-3 text-small">This certifies that</p>
               <p className="mt-1 font-heading text-[1.75rem] leading-9 font-black sm:text-[2.25rem] sm:leading-[2.75rem]">
-                {DEMO_USER.displayName}
+                {displayName}
               </p>
               <p className="mt-2 max-w-sm text-small">
                 completed the ScamSense module{" "}
