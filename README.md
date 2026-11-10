@@ -7,6 +7,8 @@
 
 [**🚀 Try ScamSense Live**](https://scamsense-3f74.onrender.com) · [Product Specification](docs/PRODUCT_SPEC.md) · [System Architecture](docs/ARCHITECTURE.md)
 
+> **Note:** ScamSense is hosted on Render's free tier. The first visit after inactivity may take approximately 50–60 seconds while the server starts. Subsequent navigation should be faster once the service is active.
+
 ScamSense is an **AI-powered financial scam education platform** that transforms traditional scam awareness into immersive, personalized simulations.
 
 Instead of answering multiple-choice questions, users investigate realistic financial situations, make decisions, explain their reasoning, and experience the consequences in a safe environment.
