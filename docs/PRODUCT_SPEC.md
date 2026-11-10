@@ -1,6 +1,6 @@
 # ScamSense — Product Specification
 
-Status: updated for Phase 6 (Step 8: hybrid routing, Gemini personalization, Gemini reasoning evaluation). This is the functional source of truth. It must stay consistent with the
+Status: updated for Step 11 (module rewards, certificates, analysis reports, Zapier certificate email; earlier: Step 9 Reveal the Red Flags + Your Recovery Playbook; earlier: Step 8 hybrid routing, Gemini personalization, Gemini reasoning evaluation). This is the functional source of truth. It must stay consistent with the
 **ScamSense Product Experience — Non-Negotiable Rules** in `CLAUDE.md`, including both the core principles and the
 detailed rules. Rule references such as (R10) point to that section.
 
@@ -156,18 +156,29 @@ to reported activities, never a probability of being scammed, and age is never a
      their checking, their payment behaviour, what to do next time; evidence they noticed vs. worth a second look.
    - A separate short, personalized, witty comment ("Just for fun"), generated in the same request (R14).
    - A takeaway and the safest next step (authored).
-   - Links to Reveal the Red Flags and Your Recovery Playbook (their full content is Step 9).
+   - Links to Reveal the Red Flags and Your Recovery Playbook (Step 9), plus a debrief navigation bar:
+     Results → Reveal the Red Flags → Your Recovery Playbook → Module dashboard.
    If Gemini fails, nothing is invented: the learner can try again, or choose clearly labelled basic feedback (authored
    text + keyword check; a fixed encouragement line instead of a joke). Evaluation never repeats a payment.
-8. **Reveal the Red Flags (R15, R16).** Available only after completion. The scenario environment is shown again in
-   reveal mode, with each piece of evidence highlighted and labeled as one of:
-   - **Red flag**: a warning sign.
-   - **Worth verifying**: not proof of fraud by itself, but something to check independently.
-   - **Positive verification**: evidence that supports legitimacy.
-
-   Each item has an explanation. Items the user cited in their reasoning are marked.
-9. **Recovery Playbook.** The results screen ends with the Your Recovery Playbook sections relevant to this
-   scenario (authored and verified, §6), with a link to the full Playbook.
+8. **Reveal the Red Flags (R15, R16; Step 9, implemented)** at `/play/[attemptId]/review`. Only for the owner's
+   COMPLETED attempt (an unfinished attempt goes back to the player; another user's attempt is not found). The learner's
+   own scenario is shown again (the same apps and the same personalized narrative, never regenerated) in a
+   **read-only review state**: they can switch apps, open conversations, emails, pages, tabs and orders, and follow
+   in-simulation links, but nothing is recorded, decisions are disabled, and nothing can start a checkout or change a
+   decision, explanation, payment, Training Funds, score, progression, badge or certificate. Content the learner never
+   opened (for example a reply they didn't choose) is shown too, and its explanation says so.
+   - Each authored piece of evidence is outlined on its stable anchor and gets a **numbered marker** (a real button).
+     Selecting a marker (or a number in the legend / evidence guide) opens the right app and panel, scrolls the element
+     into view, and opens ONE explanation at a time (title, type, explanation; Previous/Next; Close or Escape).
+   - The three types are distinguished by words, icon, and border style, never colour alone: **Red flag** (yellow
+     marker, solid outline), **Worth verifying** (white marker, dashed outline: not proof of fraud on its own),
+     **Positive verification** (teal marker, double outline: supports legitimacy).
+   - Titles and explanations come only from the server-side answer key. Separately, "Your reasoning" says whether the
+     stored Step 8 evaluation found the item **mentioned**, **missed** (worth a second look), or not mentioned;
+     unsupported assumptions from the feedback are listed apart. Opening the review never re-evaluates or rescores.
+   - The legitimate scenario (M2-S2) has no red flags: positive evidence plus details worth verifying, with copy saying
+     unfamiliar doesn't mean fraudulent.
+9. **Your Recovery Playbook (Step 9, implemented)** at `/play/[attemptId]/playbook`; see §6.
 
 ### 4.2 Feedback tone
 Praise first, explanation second. Misses use "Look again" framing with a yellow tint and a flag icon, and correct
@@ -264,48 +275,146 @@ paying") is scored as the decision chosen (resolves open question 10). XP levels
   ledger, PayPal Sandbox order, and report. Changing the preference never changes an active module; it applies from
   the next module start.
 
-## 6. Your Recovery Playbook (R21, R30)
+## 6. Your Recovery Playbook (R21, R30; Step 9)
 
-A static, authored, U.S.-specific section that explains what to do if you have been scammed while using PayPal.
-For example: how to report unauthorized activity, how the Resolution Center or disputes work, what Purchase Protection
-and Seller Protection do and don't cover, securing your account, and when to contact law enforcement or federal
-reporting channels.
+Education about what to do after a comparable real-world incident, linked to official U.S. PayPal pages. It is not a
+fraud investigation, dispute service, legal service, or promise of reimbursement, and says so on every page.
 
-- Each statement is transcribed from official PayPal U.S. sources, includes the source URL, and is labeled "last
-  verified on [date]."
-- Gemini never generates or rewrites policy facts. When uncertain, the content directs users to PayPal's official Help
-  Center.
-- There are no refund guarantees, invented timelines, or fraud statistics.
-- Feedback screens link to the relevant Playbook sections.
+### 6.1 Per-attempt Playbook (`/play/[attemptId]/playbook`, completed attempts only)
+Six parts, labelled "Based on U.S. PayPal policies. Eligibility and terms apply.":
+1. **What happened**: the lesson, the learner's decision and its authored story outcome, any Sandbox payment (test
+   money; Training Funds are fictional), and framing that depends on whether the decision was appropriate.
+2. **What you could do**: ordered steps, each either a *ScamSense practice tip* (a general safety habit, never a PayPal
+   rule) or a *verified PayPal fact* quoted with its source link and verification date.
+3. **How PayPal may help** and 5. **Official guidance**: the selected policy records as cards: key points, "To be
+   eligible", "How it works", and "Not covered or not counted" (verbatim unless labelled a summary), with the source
+   link, verification date, and the page's own "Last updated" date. A record that couldn't be verified would show only
+   its link as "Not yet verified" (none at present).
+4. **Conditions and limitations** (expandable): the distinctions that apply: unauthorized vs. a payment you were
+   tricked into approving; reporting a message vs. reporting a payment; protection programs aren't guarantees; a
+   payment claim isn't a payment (sellers); a problem with a genuine purchase isn't fraud; Sandbox checkout isn't real
+   coverage; Training Funds aren't real money; education, not a case decision.
+6. **Prevention**: the scenario's authored key lessons.
+
+Optional **personal note** (Gemini): 2–3 sentences linking the learner's decision to the lesson, plus up to three
+existing step IDs to show first. It may not mention PayPal or any protection, dispute, refund, eligibility, coverage,
+deadline, number, link, or statistic (rejected otherwise). It is generated once per attempt and stored, so revisits
+never call Gemini. Without Gemini, or before the Step 9 migration is applied, the authored Playbook is shown unchanged.
+
+### 6.2 Policy knowledge base and scenario mapping
+Versioned content in `src/content/playbook/policies.ts` (`POLICY_KB_VERSION`), one record per official page: policyId,
+topic, jurisdiction (US), sourceUrl, effectiveDate (null unless printed), lastVerified, lastChecked, verification
+status/note, pageUpdated (the "Last updated" date the page prints), factual summary, eligibility conditions,
+procedures, exclusions (+ a note when the page lists more; verbatim quotes flagged), relevant scenarios. Help Center
+companions `purchase-protection-help` and `seller-protection-help` are in the knowledge base (public `/playbook` and
+Sensei Kenshi); the per-scenario mapping below is unchanged.
+An unverified record may carry **no** policy content (schema + tests). The scenario mapping is deterministic
+(`scenarios.server.ts`): core ∪ when-paid ∪ when-decision-not-appropriate.
+
+| Scenario | Core policies | + when paid | + when not appropriate |
+|---|---|---|---|
+| M1-S1 Security Check | report-suspicious-messages, report-fraud, user-agreement | — | report-unauthorized-help |
+| M1-S2 Account Needs Attention | report-suspicious-messages, report-fraud | — | report-unauthorized-help, user-agreement |
+| M2-S1 Invoice | report-suspicious-messages, report-fraud, purchase-protection, user-agreement | dispute-filing-timeframes | — |
+| M2-S2 Laptop (legitimate) | purchase-protection, dispute-filing-timeframes | — | — |
+| M3-S1 Job | report-suspicious-messages, report-fraud, purchase-protection, user-agreement | dispute-filing-timeframes | — |
+| M3-S2 Seller | seller-protection, report-suspicious-messages, report-fraud | — | — |
+
+### 6.3 Source verification (re-verified 2026-11-10)
+The 2026-11-09 automated pass got HTTP 403 from five pages. An HTTP 403 to one automated request isn't evidence that
+a policy is unavailable or invalid, so the pages were requested again on 2026-11-10 (browser-like request headers,
+plus the alternative official URLs the product owner supplied). **All nine official pages loaded and were read.** Every
+item marked as a verbatim quote (75 items) was then checked automatically against the downloaded page text (exact match
+after normalizing whitespace and curly quotes); the 15 summary items were checked by hand. Nothing scrapes PayPal at
+runtime: the app only reads the curated records.
+
+| Record (topic) | Official source | Page date | Status |
+|---|---|---|---|
+| report-suspicious-messages (phishing) | /us/security/report-suspicious-messages | none printed | Verified 2026-11-10 (text-message steps corrected: the page now also lists "Tap More and then the Forward arrow" and "Tap Send") |
+| report-fraud (unauthorized) | /us/security/report-fraud | none printed | Verified 2026-11-10 (unchanged) |
+| report-unauthorized-help (unauthorized) | /us/cshelp/article/…-help136 | none printed | Verified 2026-11-10: reporting steps, 10-day email, check family/subscriptions first |
+| user-agreement (unauthorized) | /us/legalhub/paypal/useragreement-full, section "Liability for Unauthorized Transactions and Other Errors" only | Last updated November 4, 2026 | Verified 2026-11-10: definition, what isn't unauthorized, "tell us at once", 60-day statement rule |
+| purchase-protection (purchase) | /us/legalhub/paypal/buyer-protection (also ?locale.x=en) | Last updated January 26, 2026 | Verified 2026-11-10: scope, eligibility (6 requirements), dispute→claim steps, selected exclusions, card-issuer choice |
+| purchase-protection-help (purchase) | /us/cshelp/article/…-help364 | none printed | Verified 2026-11-10 |
+| seller-protection (seller) | /us/legalhub/paypal/seller-protection (also ?locale.x=en_US) | Last updated January 26, 2026 | Verified 2026-11-10: scope, basic requirements, redirect rule, proof of delivery, selected exclusions |
+| seller-protection-help (seller) | /us/cshelp/article/…-help156 | none printed | Verified 2026-11-10 |
+| dispute-filing-timeframes (Resolution Center) | /us/cshelp/article/dispute-filing-timeframes-help1173 (same article at pep.paypal.com) | none printed | Verified 2026-11-10: 180-day INR, 30/180-day SNAD, unauthorized "at once", 60-day other errors |
+
+Exclusion lists are curated selections; each card says the page lists more and links to it. Summaries are labelled
+"(summary of the page)" on screen. Re-verify these pages whenever PayPal updates them (the legal pages print a
+"Last updated" date, stored as `pageUpdated`), then bump `POLICY_KB_VERSION`.
+
+### 6.4 Public Playbook (`/playbook`)
+The whole knowledge base grouped by topic, with the same cards, labels, and general limitations.
 
 ## 7. Sensei Kenshi — AI learning chatbot (R22, R23)
 
-- Available as a dedicated page and a floating panel on authenticated pages.
-- Answers questions about: completed scenarios, general scam awareness, and PayPal-related topics.
-- **Gameplay integrity:** while a scenario is in progress, Sensei Kenshi receives no answer-key data and declines to
-  give hints about the active scenario (R10). After completion, it may discuss that scenario's evidence.
-- PayPal policy answers are grounded only in Recovery Playbook content, with links. Otherwise it points to PayPal's
-  official Help Center (R30).
-- There is no separate intent classifier. One system prompt defines scope and politely redirects off-topic
-  questions.
-- If Gemini is unavailable, it shows a friendly fallback message with links to the Playbook and the user's results
-  (R27).
+Implemented in Step 10 (technical details: ARCHITECTURE §21).
 
-## 8. Module completion (R24–R26)
+- **Who he is:** a calm, encouraging, slightly playful mentor with a subtle samurai-inspired identity (a topknot in
+  his avatar; no exaggerated speech or stereotypes). He supports learning through mistakes and never shames. He is not
+  PayPal, a PayPal representative, a financial or legal adviser, or a fraud-investigation service, and never asks for
+  passwords, codes, card or bank details.
+- **Where he appears:** a "Sensei Kenshi" card on the dashboard, the `/sensei` page, and "Ask Sensei Kenshi" on the
+  Results, Reveal the Red Flags, and Recovery Playbook pages of a completed attempt (opened already focused on that
+  attempt, labelled original or practice). He is **not** available on the scenario player (investigation, decision,
+  justification, Sandbox checkout): the primary-nav "Sensei Kenshi" item is hidden there and there is no widget. He is
+  not shown as a floating widget on module pages.
+- **What he answers:** scam awareness, fraud tactics, phishing and impersonation, fake invoices, marketplace, job and
+  advance-fee scams, safe payments and verification, the learner's completed scenarios (what happened, what they did,
+  what they wrote, what the stored feedback said, the score), and U.S. PayPal reporting, dispute, and protection
+  mechanisms. Off-topic questions get a short, kind explanation of what he can help with.
+- **Gameplay integrity (R10), enforced on the server:** he can only see the learner's own COMPLETED attempts.
+  Unfinished or locked scenarios are known to him by title only, so he can't reveal whether they are scams, their
+  evidence, or the right decision, whatever the learner types (repeated asking, role-play, "developer mode"). He says
+  something like "I can't reveal the outcome of a scenario you haven't completed yet" and offers general verification
+  advice. Asking the API about an unfinished attempt is refused; another user's attempt doesn't exist for you.
+- **Completed scenarios:** from the dashboard he can summarize each completed scenario's original attempt; from a
+  debrief page he discusses exactly that attempt (a replay uses its own actions, explanation, feedback, and practice
+  score, never the original's). He never invents actions, checks, or earlier feedback, and describes the legitimate
+  scenario as genuine.
+- **PayPal policy (R21, R30):** grounded only in the Step 9 verified U.S. knowledge base; official source links are
+  shown under the answer, with "verified on" or "not yet verified" labels. For an unverified page he would only point
+  to the official page. No refund promises, eligibility claims about the learner's own case, or statistics; a
+  deadline may be repeated only exactly as a retrieved verified fact states it (the reply guard rejects any other
+  number of days). When the knowledge base doesn't cover a question he points to the PayPal Help Center.
+- **Chat:** greeting, suggested questions (general vs. scenario; static, no AI call), Gemini follow-up suggestions after
+  a reply, typing indicator, Enter to send / Shift+Enter for a new line, switch between general questions and a
+  completed scenario. Conversations are not stored and disappear when the panel closes.
+- There is no separate intent classifier (R23). One Gemini request per question.
+- If Gemini is unavailable or busy, he shows a friendly "try again" message (retry keeps the same question) with links
+  to the Recovery Playbook and the attempt's results (R27). He never shows a made-up reply.
 
-When both scenarios in a module are completed:
-1. **Badge.** The module's badge appears on the dashboard: Scam Spotter (Module 1), Fraud Detective (Module 2),
-   ScamSense Guardian (Module 3).
-2. **Certificate preview.** An on-screen certificate shows the user's name, module, completion date, and a
-   certificate ID. It cannot be downloaded directly (R25).
-3. **Email certificate (optional).** The user can enter an email address, and the server sends the certificate data
-   to a Zapier webhook, which emails the certificate. If Zapier is unavailable, the user sees a calm "couldn't send
-   right now, try again later" message, and the rest of the app still works (R27).
-4. **Analysis report (downloadable PDF, R26).** It is generated server-side and covers: decisions, justification
-   summaries, evidence identified versus missed, the training-funds ledger for the module, key lessons, and links to
-   the Recovery Playbook. It uses only stored data. If AI text is missing, deterministic text is used.
+## 8. Module completion (R24–R26; Step 11)
 
-The next module unlocks at the same time (R7).
+When both ORIGINAL scenarios in a module are completed (replays never count), in the same database transaction:
+1. **Module score.** Frozen as the sum of the two original scenario scores (out of 200). Individual scenario scores
+   stay as they were.
+2. **Badge.** Scam Spotter (Module 1), Fraud Detective (Module 2), ScamSense Guardian (Module 3): ScamSense learning
+   badges, never presented as PayPal awards. Shown on the dashboard, My Profile, the Certificates page, and the
+   completion page (rosette design; locked badges say "Not earned yet" in words).
+3. **Next module unlocks** (R7).
+4. **Certificate.** Exactly one per module, with a stable random ID (e.g. `SS1-7F3A-91C2-0B4E`), the learner's display
+   name and the module title (snapshots at completion), and the completion date. It is shown on screen
+   (`/modules/[key]/complete`, also reachable from Certificates) and can be reopened any time. It has no download
+   button (R25). Disclaimer on the certificate: it recognizes completion of an educational ScamSense simulation and
+   is not a PayPal certification, endorsement, or accreditation.
+5. **Analysis report (downloadable PDF, R26).** "Download Analysis Report" on the completion and Certificates pages.
+   Contents: name, module, completion date, certificate ID, module score and scenario scores, recorded decisions,
+   an excerpt of each written explanation with the stored feedback summary, evidence identified, important evidence
+   missed, unsupported assumptions, verification actions done and not done, Training Funds start/end, legitimate
+   spending vs. fictional scam losses, stored improvement advice and takeaways, key lessons, and official references.
+   It uses only stored results (no new Gemini call), original attempts only, and states clearly that Training Funds
+   are fictional and payments were PayPal Sandbox tests. Repeat downloads change nothing.
+6. **Email certificate (optional).** The learner enters an address; the server sends the certificate details and a
+   24-hour private link to the PDF to the existing Zapier workflow, which emails it from
+   scamsense.certificates@gmail.com with the PDF attached. Statuses: not requested; sending; "Your certificate email
+   request has been submitted." (Zapier accepted it; ScamSense can't confirm delivery and never says "delivered");
+   or a calm failure with "Try again". Network retries and double clicks never send twice; "Send again" is allowed;
+   at most 5 requests per certificate per hour.
+
+Revisiting, refreshing, replaying, or retrying never creates a second badge or certificate and never changes scores,
+Training Funds, or progression. If Zapier is down, the badge, certificate preview, and report are unaffected (R27).
 
 ## 9. Dashboard
 
@@ -324,8 +433,9 @@ Training Funds strip sits at the top and the cards stack.
 | Gemini (routing) | Predefined tags only; custom text gets neutral context (nothing is guessed); the order is still saved |
 | Gemini (personalization) | Scenario uses the authored story details, stored as a tracked fallback; play continues |
 | Gemini (evaluation) | Attempt stays FINALIZED with everything saved; "Try again", or clearly labelled basic feedback (authored explanations + keyword matching, a fixed encouragement line instead of humor) |
+| Gemini (Recovery Playbook note) | No note; the authored Playbook (steps, verified facts, links) is shown unchanged. After a real failure a fallback is stored, so it isn't retried on every visit |
 | Gemini (chat) | Friendly fallback message with links |
-| Zapier | Certificate stays visible on screen, and the email can be retried |
+| Zapier | Certificate stays visible on screen, the report still downloads, and the email can be retried ("We couldn't send your certificate right now") |
 | PayPal Sandbox | The payment step shows "Sandbox checkout unavailable" (missing credentials) or "couldn't confirm with PayPal yet, check again" (outage or lost response). The user can cancel, retry, or finish without paying (the decision stays locked). Checking again reads the order and never charges twice. No payment is faked as a PayPal transaction. |
 
 ## 11. Out of scope (MVP)
@@ -362,4 +472,19 @@ non-U.S. recovery policies, multiple languages, and admin CMS.
 14. ~~Results states~~ Approved (owner decision, 2026-11-13): REVIEW_AVAILABLE and RECOVERY_AVAILABLE are reached
    automatically with the feedback; the Reveal the Red Flags and Recovery Playbook screens arrive in Step 9.
 15. ~~M1-S2 routing tag~~ Approved (owner decision, 2026-11-13): M1-S2 keeps the `subscriptions` routing tag.
-
+16. ~~(Step 9) Human policy verification needed~~ Resolved 2026-11-10: all nine official pages were read and the
+   quotes checked automatically (§6.3). Still recommended: a person skims the 15 summary items and the curated
+   exclusion selections against the live pages.
+17. (Step 9) The authored Playbook steps and limitation texts (`src/content/playbook/`) await owner review.
+18. (Step 9) The review also shows content the learner never opened (e.g. unchosen chat replies) so every piece of
+   evidence can be inspected; it is labelled "You didn't open this part during your attempt". Confirm this is acceptable.
+19. (Step 10) Sensei Kenshi conversations are not stored (no `chat_messages` table, no history across visits). Confirm
+   this is acceptable, or whether learners should see recent conversations again.
+20. (Step 10) Kenshi's avatar is an original SVG drawn in the brand icon style (teal outline, yellow topknot tie). A
+   commissioned character illustration could replace it; owner review pending.
+21. (Step 11) The certificate keeps the display name from the moment of completion; later profile name changes don't
+   rewrite issued certificates. Confirm this is acceptable.
+22. (Step 11) Certificate-email delivery can't be confirmed (Zapier only accepts the request). Adding a confirmation
+   would need an extra Zap step calling back into ScamSense; not planned for the MVP.
+23. (Step 11) PDF fonts cover Latin and Latin Extended characters. Names in other scripts (e.g. Arabic, CJK) would not
+   render in the PDFs (the on-screen certificate is fine). Add a fallback font if needed.

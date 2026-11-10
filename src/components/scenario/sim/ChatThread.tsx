@@ -38,8 +38,15 @@ export function ChatThread({
   /** Show the back control on wide screens too (otherwise it only appears in the stacked mobile layout). */
   backAlways?: boolean;
 }) {
-  const { recorded, record, interactive } = useSim();
+  const { recorded, record, interactive, reveal } = useSim();
   const [showDetails, setShowDetails] = useState(false);
+
+  // Review (read-only): evidence inside the contact details opens that panel.
+  useEffect(() => {
+    const t = reveal?.target;
+    if (t && "threadId" in t && t.threadId === thread.id && t.details) setShowDetails(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal?.nonce]);
   const messages = visibleMessages(thread, recorded);
   const replies = thread.branches.filter(
     (b) => !recorded.includes(b.actionId) && isAvailable(b.requires, recorded),

@@ -1,6 +1,6 @@
 # ScamSense — Data Model
 
-Status: Phase 6 (Step 8). Step 8 adds `20261112090000_hybrid_intelligence.sql` (§3.12–§3.16, §4 items 10–15): profile
+Status: Step 9 adds `20261114090000_recovery_playbooks.sql` (§3.17, §4 items 16–17). Earlier: Phase 6 (Step 8). Step 8 adds `20261112090000_hybrid_intelligence.sql` (§3.12–§3.16, §4 items 10–15): profile
 "Other" descriptions, routing cache and order, personalization instances, and evaluations. Supabase PostgreSQL. Implemented: `profiles`
 (`20261109000000_profiles.sql`) and `module_runs`, `scenario_attempts`, `wallet_ledger_entries`, `scenario_scores`
 (`20261109120000_progression_wallet.sql`); currency allowlist narrowed to USD by `20261109140000_usd_only_currency.sql`
@@ -31,6 +31,7 @@ scenario_attempts 1─0..1 attempt_evaluations (Step 8: one evaluation per attem
 scenario_attempts 1─0..1 attempt_personalizations ─* scenario_personalizations (Step 8: narrative shown)
 auth.users 1─* profile_interpretations (Step 8: validated classification cache, keyed by fingerprint)
 auth.users 1─* module_scenario_orders  (Step 8: one write-once routed order per module)
+scenario_attempts 1─0..1 attempt_recovery_playbooks (Step 9: stored personal Playbook note; replays have their own)
 scenario_attempts 1─* scenario_attempt_events (append-only log of accepted state-machine events)
 scenario_attempts 1─* payment_transactions
 scenario_attempts 1─* wallet_ledger_entries (payment entries reference the attempt)
@@ -207,31 +208,57 @@ module run, independent of any PayPal balance (R18). The only permitted update i
 (trigger); there are no delete grants. Spending and fraud loss are reported separately.
 The link to the PayPal payment is `payment_transactions.ledger_entry_id` (Step 7).
 
-### 3.7 `badges` (Phase 9; until then a badge is derived from `module_runs.completed_at`)
-| `id` uuid PK · `user_id` · `module_run_id` unique · `module_key` · `awarded_at` |
-
-### 3.8 `certificates`
+### 3.7 `badges` (implemented, Step 11, `20261115090000_module_rewards.sql`)
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid PK | |
 | `user_id` | uuid FK | |
-| `module_run_id` | uuid FK unique | |
-| `module_key` | text | |
-| `certificate_code` | text unique | random, non-guessable (e.g., 12 chars base32) |
-| `recipient_name` | text | snapshot of the display name |
-| `issued_at` | timestamptz | |
+| `module_run_id` | uuid unique | FK (run, user, module) to `module_runs` |
+| `module_key` | text | unique per user |
+| `badge_key` | text | `scam-spotter` / `fraud-detective` / `scamsense-guardian`, checked against the module |
+| `module_score`, `max_score` | smallint | frozen sum of the two original attempts' scores; max 200 |
+| `awarded_at` | timestamptz | = `module_runs.completed_at` |
 
-### 3.9 `certificate_email_requests`
-| `id` uuid PK · `certificate_id` FK · `user_id` · `recipient_email` text · `status` (`PENDING`,`SENT`,`FAILED`) ·
-`http_status` int null · `error_code` text null · `created_at` |
+### 3.8 `certificates` (implemented, Step 11)
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | internal; scopes email requests and the private PDF path |
+| `user_id` | uuid FK | |
+| `module_run_id` | uuid unique | FK (run, user, module) |
+| `module_key` | text | unique per user |
+| `certificate_code` | text unique | `SS<n>-XXXX-XXXX-XXXX`, 48 random bits; never regenerated |
+| `recipient_name` | text | display-name snapshot at completion |
+| `module_title` | text | snapshot |
+| `completed_at` | timestamptz | = `module_runs.completed_at` |
+| `issued_at` | timestamptz | row creation |
 
-### 3.10 `chat_messages`
+Both tables: RLS select-own; no INSERT/UPDATE/DELETE grants for any role (rows come only from the security-definer
+award function); update triggers raise `module_reward_final`.
+
+### 3.9 `certificate_email_requests` (implemented, Step 11)
+| `id` uuid PK · `certificate_id` FK (certificate, user) · `user_id` · `recipient_email` text (lower-cased, 3-254) ·
+`idempotency_key` uuid (unique per user) · `status` (`PROCESSING`, `SUBMITTED`, `FAILED`) · `http_status` int null ·
+`error_code` text null · `created_at`, `updated_at`, `finished_at` |
+
+`SUBMITTED` = the Zapier Catch Hook accepted the request (not proof of delivery). Only PROCESSING to SUBMITTED/FAILED,
+once (trigger). The email address is stored only on its request row. RLS select-own; writes only through the
+service_role functions below. Generated PDFs are not a table: they live in the private storage bucket
+`certificate-pdfs` (no browser policies), path `<certificate id>/v1/<file>.pdf`.
+
+### 3.10 `chat_messages` (not created: Step 10 decision)
+Sensei Kenshi conversations are not persisted in the MVP (the Step 10 brief asks for no chat memory system); the
+browser keeps the open conversation only. Kenshi reads existing tables only (`scenario_attempts`, events, payments,
+`attempt_evaluations`, `scenario_scores`) through the user's session client, and writes nothing. The design below is
+kept for a possible later phase.
+
+
 | `id` uuid PK · `user_id` · `attempt_id` uuid null · `role` (`user`,`assistant`) · `content` text (≤4000) ·
 `source` (`gemini`,`fallback`) · `created_at` |
 
 ### 3.11 `rate_limit_events`
 | `id` bigserial · `user_id` · `action` (`chat`,`cert_email`,`attempt_create`) · `created_at` |
-Limits are checked by counting rows in a time window. Old rows are pruned opportunistically.
+Not created. Certificate-email limits count `certificate_email_requests` rows (Step 11); chat uses an in-process
+limiter (Step 10).
 
 ### 3.12 `profile_interpretations` (Step 8): validated Gemini interpretations of custom text
 | Column | Type | Notes |
@@ -284,6 +311,21 @@ Points live only in `scenario_scores` (written by `complete_scenario_attempt`).
 RLS on §3.12–3.16: owner SELECT only; no browser writes; the server writes through the functions below (and plain
 inserts for the two insert-only caches).
 
+### 3.17 `attempt_recovery_playbooks` (Step 9, migration `20261114090000_recovery_playbooks.sql`)
+One row per COMPLETED attempt whose Recovery Playbook note was generated (original and each replay separately).
+| Column | Notes |
+|---|---|
+| `attempt_id` PK, `user_id`, `module_run_id` | composite FK → scenario_attempts (id, user_id, module_run_id), cascade |
+| `scenario_key`, `is_practice` | copied from the attempt |
+| `status` | `pending` (claimed, `claimed_at`) → `ready` (final: update trigger raises `recovery_playbook_final`) |
+| `source` | `gemini` or `fallback` once ready |
+| `note` | ≤420 chars, only for `gemini` (check); never policy |
+| `emphasis_step_ids` | ≤3 Playbook step ids |
+| `policy_ids`, `kb_version` | the deterministic selection and knowledge-base version it was made with |
+| `prompt_version`, `model`, `fallback_reason`, `input_tokens`, `output_tokens`, `latency_ms`, `completed_at` | tracking |
+RLS: owner SELECT only; no browser writes. The policy knowledge base itself is versioned code (`src/content/playbook/`),
+not a table.
+
 ## 4. Transactional operations
 Implemented in Phase 3 as `security definer` functions with `search_path = ''`, executable **only by
 `service_role`** (the server's trusted writer, `src/lib/supabase/admin.ts`), which passes the user id from the
@@ -319,7 +361,12 @@ verified session. Errors are SQLSTATE `P0001` with stable messages (`module_lock
    waiting; CANCELLED/FAILED close the row and move a PAYMENT_PENDING attempt to PAYMENT_CANCELLED
    (PAYMENT_CANCELLED / PAYMENT_FAILED event). Repeats are idempotent.
    `complete_scenario_attempt` (replaced in place) also classifies the attempt's CAPTURED payment row.
-9. *(Phase 9)* badge + certificate rows at module completion.
+9. *(Step 11)* `award_module_rewards(run)` (internal, executable by no API role) via the AFTER UPDATE trigger
+   `module_runs_award_rewards` on the single completion write: badge + certificate, `on conflict do nothing`;
+   `ensure_module_rewards(user, module_key)` (service_role) repairs a completed run without rewards;
+   `begin_certificate_email_request(user, certificate, email, idempotency_key)` returns
+   `{outcome: created | existing | in_flight | duplicate | rate_limited, request}`;
+   `finish_certificate_email_request(user, request, SUBMITTED | FAILED, http_status, error_code)` is idempotent.
 10. *(Step 8)* `claim_scenario_personalization(user, scenario, content_version)` → `{status: ready|busy|claimed, id}`
     (advisory lock per user+scenario; a pending claim older than 45s is taken over).
 11. *(Step 8)* `complete_scenario_personalization(user, id, source, slots, fallback_reason, model, prompt_version,
@@ -333,6 +380,11 @@ verified session. Errors are SQLSTATE `P0001` with stable messages (`module_lock
     scoring_version, payment_classification)`: in ONE transaction stores the evaluation, applies FEEDBACK_READY,
     REVIEW_READY, RECOVERY_READY through `apply_attempt_event`, and calls `complete_scenario_attempt`; idempotent once
     complete (a repeat can never overwrite the stored score).
+
+16. *(Step 9)* `claim_recovery_playbook(user, attempt)` → `ready | busy | claimed`; requires the owned attempt to be
+    COMPLETED (`attempt_not_completed`); a pending claim older than 45 s is taken over.
+17. *(Step 9)* `complete_recovery_playbook(user, attempt, source, policy_ids, note, emphasis_step_ids, kb_version,
+    prompt_version, model, fallback_reason, tokens…, latency_ms)`: pending → ready, idempotent.
 
 ## 5. Static content types (TypeScript, validated by Zod)
 ```ts
@@ -355,6 +407,11 @@ EvidenceDefinition { evidenceId, targetElementId, evidenceType: "red_flag"|"wort
                    "positive_verification_evidence", title, explanation, educationalImportance,
                    associatedCorrectDecisionRules, weight: 1|2|3, keywords }
 ScenarioTemplate  (assembled in templates.server.ts): every Step 6 brief §5 field
-PlaybookSection { id, title, body, sources: { url, title }[], lastVerified: ISODate }
+PolicyRecord { policyId, topic, jurisdiction: "US", sourceTitle, sourceUrl, effectiveDate|null, lastVerified|null,
+               lastChecked, verificationStatus: "verified"|"source_unavailable", verificationNote,
+               eligibilityConditions[], exclusions[], factualSummary: {id, text, quote}[], relevantScenarioTags }
+                                                         // src/content/playbook/policies.ts (Step 9)
+ScenarioPlaybook { scenarioKey, lesson, framing, steps (practice | paypal{policyId, factId}), howPayPalMayHelp,
+                   policies {core, whenPaid, whenAffected}, distinctions }   // scenarios.server.ts (server-only)
 Currency    { code, minorUnitDigits }
 ```

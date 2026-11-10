@@ -3,17 +3,19 @@
 import { useState } from "react";
 import type { SiteBlockContent } from "@/content/scenarios/schema";
 import { SiteBlocks } from "./SiteBlocks";
-import { useSim } from "./SimContext";
+import { useReveal, useSim } from "./SimContext";
 
 /**
  * A fictional payment-account app (TandemPay) for independent verification: the player opens it themselves to check
  * activity, security events, and official contact details. Deliberately not styled like PayPal (R34).
  */
 export function WalletApp({
+  appId,
   brand,
   owner,
   tabs,
 }: {
+  appId: string;
   brand: string;
   owner: string;
   tabs: readonly { id: string; label: string; actionId?: string; blocks: SiteBlockContent[] }[];
@@ -21,6 +23,11 @@ export function WalletApp({
   const { record } = useSim();
   const [tabId, setTabId] = useState<string | null>(null);
   const tab = tabs.find((t) => t.id === tabId) ?? null;
+
+  // Review (read-only): open the tab that holds a piece of evidence.
+  useReveal(appId, (t) => {
+    if (t.kind === "wallet_tab") setTabId(t.tabId);
+  });
 
   function openTab(id: string) {
     const t = tabs.find((x) => x.id === id);

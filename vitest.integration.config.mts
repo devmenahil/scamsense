@@ -3,6 +3,8 @@ import { defineConfig } from "vitest/config";
 
 /** Live tests against the real Supabase project (see tests/integration/*). Run with `npm run test:integration`. */
 export default defineConfig({
+  // PDF documents are React components (.tsx); Next uses jsx "preserve", so tests transform JSX themselves.
+  oxc: { jsx: { runtime: "automatic" } },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

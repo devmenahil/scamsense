@@ -24,6 +24,20 @@ export const FOOTER_NAV: readonly { href: string; label: string }[] = [
   { href: "/sign-in", label: "Sign in" },
 ];
 
+/**
+ * The immersive scenario player (/play/[attemptId]). Sensei Kenshi must not be reachable from here (Step 10): the
+ * player covers investigation, decision, justification, and checkout. Debrief pages (/play/[id]/results, /review,
+ * /playbook) are only served for COMPLETED attempts and are not gameplay.
+ */
+export function isGameplayPath(pathname: string): boolean {
+  return /^\/play\/[^/]+\/?$/.test(pathname);
+}
+
+/** Primary navigation for a path: everything, minus Sensei Kenshi on gameplay screens. */
+export function navItemsFor(pathname: string): readonly NavItem[] {
+  return isGameplayPath(pathname) ? APP_NAV.filter((i) => i.href !== "/sensei") : APP_NAV;
+}
+
 export function isActive(pathname: string, href: string): boolean {
   if (href === "/dashboard") return pathname === "/dashboard";
   return pathname === href || pathname.startsWith(`${href}/`);

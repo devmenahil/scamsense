@@ -6,7 +6,7 @@ import { Icon } from "@/components/icons/Icon";
 import { BrowserFrame } from "./BrowserFrame";
 import { ChatThread } from "./ChatThread";
 import { ProductArt } from "./ProductArt";
-import { anchor, useAvailableDecisions, useSim } from "./SimContext";
+import { anchor, useAvailableDecisions, useReveal, useSim } from "./SimContext";
 import { KvList, DecisionButton } from "./primitives";
 
 type Tab = "overview" | "listings" | "orders" | "messages";
@@ -28,6 +28,13 @@ export function SellerHubApp({ app }: { app: SellerHubAppContent }) {
     { id: "messages", label: "Messages" },
   ];
   const path = tab === "orders" && order ? `orders/${order.number}` : tab;
+
+  // Review (read-only): open the tab or order that holds a piece of evidence.
+  useReveal(app.id, (t) => {
+    if (t.kind !== "hub") return;
+    setTab(t.tab);
+    setOrderId(t.tab === "orders" ? (t.orderId ?? null) : null);
+  });
 
   function openOrder(id: string) {
     record(app.orders.find((o) => o.id === id)?.viewActionId);

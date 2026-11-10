@@ -148,6 +148,38 @@ export interface TrustedWriterDatabase {
       }>;
       claim_attempt_evaluation: Fn<{ p_user_id: string; p_attempt_id: string }>;
       fail_attempt_evaluation: Fn<{ p_user_id: string; p_attempt_id: string; p_reason: string }>;
+      // Step 9 (20261114090000_recovery_playbooks.sql)
+      claim_recovery_playbook: Fn<{ p_user_id: string; p_attempt_id: string }>;
+      complete_recovery_playbook: Fn<{
+        p_user_id: string;
+        p_attempt_id: string;
+        p_source: "gemini" | "fallback";
+        p_policy_ids: string[];
+        p_note: string | null;
+        p_emphasis_step_ids: string[];
+        p_kb_version: string;
+        p_prompt_version: string;
+        p_model: string | null;
+        p_fallback_reason: string | null;
+        p_input_tokens: number | null;
+        p_output_tokens: number | null;
+        p_latency_ms: number | null;
+      }>;
+      // Step 11 (20261115090000_module_rewards.sql)
+      ensure_module_rewards: Fn<{ p_user_id: string; p_module_key: string }>;
+      begin_certificate_email_request: Fn<{
+        p_user_id: string;
+        p_certificate_id: string;
+        p_recipient_email: string;
+        p_idempotency_key: string;
+      }>;
+      finish_certificate_email_request: Fn<{
+        p_user_id: string;
+        p_request_id: string;
+        p_status: "SUBMITTED" | "FAILED";
+        p_http_status: number | null;
+        p_error_code: string | null;
+      }>;
       record_attempt_evaluation: Fn<{
         p_user_id: string;
         p_attempt_id: string;

@@ -33,6 +33,9 @@ class Query implements PromiseLike<{ data: unknown; error: null }> {
   order() {
     return this;
   }
+  limit() {
+    return this;
+  }
   returns() {
     return this;
   }

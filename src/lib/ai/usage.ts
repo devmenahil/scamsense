@@ -6,7 +6,13 @@
  * the model identifier. Read it at GET /api/dev/gemini-usage (development only) or in tests.
  */
 
-export const GEMINI_CATEGORIES = ["classification", "personalization", "evaluation"] as const;
+export const GEMINI_CATEGORIES = [
+  "classification",
+  "personalization",
+  "evaluation",
+  "recovery",
+  "chat",
+] as const;
 export type GeminiCategory = (typeof GEMINI_CATEGORIES)[number];
 
 export interface CategoryUsage {
@@ -54,6 +60,8 @@ function fresh(): UsageSnapshot {
       classification: empty(),
       personalization: empty(),
       evaluation: empty(),
+      recovery: empty(),
+      chat: empty(),
     },
   };
 }

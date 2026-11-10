@@ -19,6 +19,7 @@ import { Card } from "@/components/ui/Card";
 import { FeedbackBanner } from "@/components/ui/FeedbackBanner";
 import { IconTile } from "@/components/ui/IconTile";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PostScenarioNav } from "@/components/review/PostScenarioNav";
 
 export const metadata: Metadata = { title: "Scenario results" };
 export const dynamic = "force-dynamic";
@@ -87,6 +88,13 @@ function Results({ r }: { r: ResultsView }) {
             </Badge>
           ) : undefined
         }
+      />
+      <PostScenarioNav
+        attemptId={r.attemptId}
+        moduleKey={r.moduleKey}
+        current="results"
+        scenarioTitle={r.title}
+        isPractice={r.isPractice}
       />
 
       {/* Praise first (R37). Meaning carried by words and icon, not colour. */}
@@ -240,7 +248,7 @@ function Results({ r }: { r: ResultsView }) {
           <div className="min-w-0 flex-1">
             <h2 className="font-heading text-lg font-extrabold">Reveal the Red Flags</h2>
             <p className="text-small text-teal/90">
-              A walkthrough of this scenario with every piece of evidence marked is coming soon.
+              Revisit your scenario with every piece of evidence marked and explained.
             </p>
           </div>
         </Card>
@@ -249,18 +257,25 @@ function Results({ r }: { r: ResultsView }) {
           <div className="min-w-0 flex-1">
             <h2 className="font-heading text-lg font-extrabold">Your Recovery Playbook</h2>
             <Link
-              href="/playbook"
+              href={`/play/${r.attemptId}/playbook`}
               className="inline-flex min-h-11 items-center gap-1.5 font-heading font-extrabold underline decoration-2 underline-offset-4"
             >
-              Open the Playbook
+              What you could do in real life
               <Icon name="arrow-right" className="size-4" />
             </Link>
           </div>
         </Card>
       </div>
 
-      <div className="mt-10 flex justify-center">
-        <ButtonLink href={moduleHref} size="lg" iconRight={<Icon name="arrow-right" className="size-5" />}>
+      <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+        <ButtonLink
+          href={`/play/${r.attemptId}/review`}
+          size="lg"
+          iconRight={<Icon name="arrow-right" className="size-5" />}
+        >
+          Reveal the Red Flags
+        </ButtonLink>
+        <ButtonLink href={moduleHref} variant="secondary">
           Back to module
         </ButtonLink>
       </div>

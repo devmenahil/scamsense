@@ -116,7 +116,7 @@ Every phase must preserve the **Non-Negotiable Rules** in `CLAUDE.md`.
 - No scenario can be played for real yet, so attempts, payments, and scores are only produced by the integration
   tests. Phase 4 creates attempts through `create_scenario_attempt`; Phase 5 debits through
   `record_training_payment`; Phase 6 completes through `complete_scenario_attempt` with the evaluator's IDs.
-- Badges are derived from completed module runs; the `badges`/`certificates` tables arrive with Phase 9.
+- Badges are derived from completed module runs; the `badges`/`certificates` tables arrived in Step 11.
 - The completion page (`/modules/[key]/complete`) is still the Phase 1 labelled preview.
 - "Start module" does a full page reload after success: a soft `router.refresh()` received the new payload but did
   not re-render in testing (Next 15.5). Revisit if soft refresh is needed elsewhere.
@@ -246,7 +246,124 @@ templates. No Gemini and no PayPal API calls were added.
   responses, and the API journey, not by clicking through in a real browser.
 - Reveal the Red Flags and the Recovery Playbook screens remain Step 9 (results show links/"coming soon").
 
-## Phase 7 — Results and Reveal the Red Flags
+## Step 9 — Reveal the Red Flags + Your Recovery Playbook ✅ — automated checks pass, awaiting owner review
+Covers the Reveal items of Phase 7 and the Recovery Playbook of Phase 10 (the Step 9 brief combined them).
+- [x] Inspected Step 8 completion/results, answer keys, anchors (50 evidence targets), sim apps
+- [x] Pure anchor locator + client-safe `ReviewView` (COMPLETED only, stored data only, exact played narrative)
+- [x] Read-only environment (`readOnly`, `reveal`, `useCanNavigate`, `useReveal` in all six apps; inline invoice)
+- [x] Accessible numbered markers (overlay with clipping, `display: contents` support, collision nudging), one
+      explanation at a time, Previous/Next, Escape, focus return; legend + evidence guide; reasoning status kept separate
+- [x] Legitimate-scenario framing (M2-S2: positive + worth verifying, no red flags)
+- [x] Official sources checked 2026-11-09: 2 verified (report-suspicious-messages, report-fraud); 5 returned HTTP 403
+      and are linked only, pending human verification (PRODUCT_SPEC §6.3)
+- [x] Versioned policy knowledge base, deterministic scenario → policy mapping, authored steps and limitations
+- [x] Gemini personal note (one per attempt, claimed + stored, policy vocabulary rejected) with authored fallback
+- [x] Migration `20261114090000_recovery_playbooks.sql` — **to be applied by the owner**
+- [x] `/play/[id]/review`, `/play/[id]/playbook`, public `/playbook`, debrief navigation, results links
+- [x] Tests: 361 unit tests (79 new: locator for all six scenarios, review view, completion gate, KB invariants,
+      mapping, no invented deadlines/guarantees, note validation, measured Gemini calls, migration guards); live suite
+      `review-playbook.integration.test.ts` 6/6 against the production build (unfinished/foreign attempts hidden, 401/404/409,
+      review + Playbook content, DB snapshot unchanged after visiting both pages, replay separation); Step 6/8/5
+      live suites 33/33; production build; client bundle scan (no answer key, guidance, or prompt)
+- [ ] **Manual:** apply the migration; then verify one live personal note (1 Gemini request)
+- [x] ~~Manual: human verification of the five unverified PayPal pages~~ Done 2026-11-10 by a second automated pass
+      (all nine pages HTTP 200, 75 quotes checked verbatim); see "Policy re-verification" below
+- [ ] **Manual:** visual check of marker positions in a real browser (desktop, tablet, 360 px)
+
+**Step 9 notes / limitations**
+- No browser-automation tool was available: marker placement, scrolling, focus handling and mobile layout were verified
+  by code review, build, and HTML responses only, not by clicking in a real browser.
+- The PayPal checkout live suite was not re-run (payment code unchanged; it creates real Sandbox orders).
+
+## Step 10 — Sensei Kenshi learning companion ✅ — automated + live checks pass, awaiting owner review
+Covers Phase 11 below (the Step 10 brief replaces its streaming/history plan; see ARCHITECTURE §5 decision).
+- [x] Inspected the placeholder chat/page, nav, layouts, Step 8 Gemini client, Step 9 knowledge base and debrief pages
+- [x] Backend answer protection: session user, RLS ownership (404), COMPLETED-only attempt context (409), overview of
+      COMPLETED attempts only, unfinished scenarios by title only (`src/lib/kenshi/context.ts`, `server.ts`)
+- [x] Policy retrieval from the Step 9 knowledge base only (topic match + scenario mapping, max 4; unverified = link only)
+- [x] `POST /api/chat`: one structured Gemini call (`chat` category, 20 s, own per-user budget), Zod + reply guards
+      (invented policy, links, credentials, unfinished-scenario verdicts), server-attached official sources
+- [x] Chat UI (`src/components/kenshi/`): avatar, greeting, distinct bubbles, typing indicator, suggestions/follow-ups,
+      auto-scroll, keyboard, retry without duplicates, context chip + switching, sources with verification labels
+- [x] Entry points: dashboard card, `/sensei`, "Ask Sensei Kenshi" in the debrief nav (Results / Reveal / Playbook)
+- [x] Absent from gameplay: nav item hidden on `/play/[attemptId]`; test forbids Kenshi in the player and sim apps
+- [x] Removed the Phase 1 offline placeholder (`src/components/chat/SenseiChat.tsx`)
+- [x] Tests: 398 unit tests (37 new: answer protection for every unfinished state, foreign attempts, Module 2/3 keys
+      absent from the prompt under prompt injection, original vs replay records, legit scenario framing, policy
+      retrieval, reply guards, one request per question, bounded history, gameplay exclusion); live suite
+      `kenshi.integration.test.ts` 8/8 against the production build (401/400/404/409, entry points present on
+      dashboard and debrief pages and absent from the player, 4 live answers, no DB writes); Step 9 + progression +
+      scenario-engine live suites 34/34; production build; client bundle scan (no system prompt or answer key)
+- [ ] **Manual:** click through the panel in a real browser (desktop, tablet, 360 px), incl. screen reader check
+- [ ] **Owner review:** open questions 19–20 (PRODUCT_SPEC §12)
+
+**Step 10 notes / limitations**
+- No migration and no new environment variables.
+- Gemini output is non-deterministic; the guards catch the defined patterns (invented deadlines, statistics, refund
+  promises, links, verdicts that name an unfinished scenario) but can't judge every possible wording. The protection
+  that matters is structural: unfinished answer keys never reach the model.
+- One live replay check failed once in three runs without any server-side Gemini error and passed on its own re-run,
+  most likely the 30 s per-test timeout during a retry; the live block now has a 60 s timeout.
+- The rate limiter is in-process (as in Step 8); chat has its own per-user budget but shares the global RPM.
+- (Superseded 2026-11-10) Originally only two PayPal pages were verified; since the re-verification Kenshi can explain
+  Purchase/Seller Protection, dispute timeframes, and the unauthorized-transaction definition from verified facts.
+- The PayPal checkout and Step 8 intelligence live suites were not re-run (payment and evaluation code unchanged;
+  they create Sandbox orders / Gemini evaluations).
+
+## Policy re-verification (Recovery Playbook fix, 2026-11-10) ✅ — automated checks pass, awaiting owner review
+- [x] Re-requested every official source (plus the owner's alternative URLs); all nine loaded (HTTP 200); none 403
+- [x] Knowledge base `2026-11-10.1`: 9 verified records (2 new Help Center records), new fields `pageUpdated`,
+      `procedures`, `exclusionsNote`; 75 verbatim quotes checked automatically against the page text, 15 summaries
+      labelled and checked by hand; corrected the incomplete text-message steps of report-suspicious-messages
+- [x] Playbook: cards show key points / eligibility / how it works / exclusions; "read the terms on PayPal" practice
+      steps replaced by verified PayPal steps (M1 reporting steps, M2-S1/M3-S1 scope + Friends and Family + the
+      unauthorized definition, M2-S2 contact seller + timeframes, M3-S2 shipping address/redirect/proof); captions and
+      distinctions updated; scenario → policy mapping unchanged
+- [x] Sensei Kenshi: retrieves the new items; the reply guard now allows a timeframe only when a retrieved verified
+      fact states it (all others still rejected); prompt updated
+- [x] Tests: 143 focused unit tests (Playbook, Kenshi, report, content) incl. new distinction/timeframe tests;
+      type-check, lint, production build; public `/playbook` HTML checked (no "Not yet verified"/"HTTP 403")
+- [ ] **Not run:** Step 9 and Step 10 live suites (Gemini calls); the Step 9 suite's expectations were updated
+- [ ] **Owner review:** the 15 summary items and the curated exclusion selections (PRODUCT_SPEC §6.3)
+
+## Step 11 — Module rewards, certificates, analysis reports, Zapier email ✅ — automated checks pass, awaiting owner review
+Covers Phase 9 below.
+- [x] Inspected completion (`complete_scenario_attempt`), scores, snapshot-derived badges, placeholder completion page
+      and email form, ledger, originals vs replays, Step 8 stored evaluations
+- [x] Migration `20261115090000_module_rewards.sql`: `badges`, `certificates`, `certificate_email_requests`, award
+      trigger on module completion + backfill, `ensure_module_rewards`, `begin/finish_certificate_email_request`,
+      private bucket `certificate-pdfs`; RLS read-own, no browser writes — **to be applied by the owner**
+- [x] Badges (rosette SVG) on dashboard, My Profile, Certificates, completion page
+- [x] Certificate preview (HTML) + identical server PDF (`@react-pdf/renderer`, embedded Nunito/Inter); no download
+- [x] Analysis report PDF via `GET /api/modules/[moduleKey]/report` (stored data only, owner only, no-store)
+- [x] Certificate email via the existing Zap: allowlisted payload + `certificateId`, `completionDate`,
+      `certificatePdfUrl` (24 h signed URL); dedupe, rate limit, honest statuses, retry
+- [x] Tests: 440 unit tests (42 new: migration drift/uniqueness/grants, certificate view + UTC dates, file names,
+      email statuses, body validation, Zapier payload allowlist + success/HTTP error/timeout/network/not configured,
+      email service (send once, failure, PDF failure skips Zapier, existing/in-flight/duplicate, 429, unfinished and
+      foreign modules), repair path, report model (scores, funds, evidence, excerpt, references, missing data), PDF
+      rendering (certificate 1 page, report multi-page, Latin Extended name), no certificate download in browser
+      code); production build; client bundle scan; live smoke test against the production build (report 200 PDF x2,
+      401, 409; pages render; pre-migration fallbacks)
+- [x] Live suite `tests/integration/rewards.integration.test.ts` written (one badge/certificate, idempotency incl.
+      replay, immutability, unlock, owner-only APIs, repeatable report download with unchanged DB, email dedupe and
+      rate limit in the DB, private storage + signed-URL expiry; optional real email with `ZAPIER_LIVE_TEST_EMAIL`).
+      **Not run yet: it skips until the migration is applied**
+- [x] Migration applied by the owner (2026-11-10): 3 tables + private bucket present; backfill awarded 86 badges and
+      86 certificates for the 86 previously completed modules. Step 11 live suite: 9 passed, 1 skipped (opt-in real
+      email). Two test-only fixes: valid score split in the helper; 10 s signed-URL TTL (2 s raced clock skew)
+- [ ] **Manual:** map `certificatePdfUrl` to Gmail Attachments in the existing Zap (ARCHITECTURE section 11.3), send one
+      real certificate email, confirm the PDF attachment opens, then publish the Zap
+- [ ] **Manual:** visual check of certificate preview, badges, and report button at 1440 / 768 / 360 px
+
+**Step 11 notes / limitations**
+- `ZAPIER_WEBHOOK_SECRET` is not used (no verification step exists in the Zap); the webhook URL stays server-only.
+- Email delivery can't be confirmed; "submitted" means Zapier accepted the request.
+- Report and file-name dates use UTC (a completion late in the evening in the Americas shows the next day).
+- PDF fonts: Latin + Latin Extended only (PRODUCT_SPEC open question 23).
+- No browser-automation tool was available: responsive layouts were checked by code review and HTML responses only.
+
+## Phase 7 — Results and Reveal the Red Flags (superseded by Step 9 above)
 - [ ] `/play/[attemptId]/results` gated on COMPLETED
 - [ ] Feedback view (praise first, outcome, wallet impact, AI feedback, separate humor, safest next step)
 - [ ] Reveal mode: re-render the environment with evidence highlights labeled red flag / worth verifying / positive,
@@ -258,22 +375,22 @@ templates. No Gemini and no PayPal API calls were added.
 - [x] Payment percentages, evidence, keywords, fallback texts, Playbook links (initial versions, Step 6)
 - [ ] Content review against the core principles + R8–R17, R28–R30
 
-## Phase 9 — Module completion: badge, certificate, report, Zapier
-- [ ] `complete_attempt` module-completion logic (badge + certificate rows, next module unlock)
-- [ ] Completion page: badge, on-screen certificate (no download)
-- [ ] Zapier webhook integration + email form + retry + rate limit; Zap configured with a shared secret
-- [ ] `@react-pdf/renderer` analysis report via `GET /api/modules/[moduleKey]/report`
+## Phase 9 — Module completion: badge, certificate, report, Zapier (implemented in Step 11 above)
+- [x] Module-completion rewards (badge + certificate rows via trigger, next module unlock unchanged)
+- [x] Completion page: badge, on-screen certificate (no download)
+- [x] Zapier webhook integration + email form + retry + rate limit (shared secret dropped: the Zap can't verify it)
+- [x] `@react-pdf/renderer` analysis report via `GET /api/modules/[moduleKey]/report`
 
-## Phase 10 — Your Recovery Playbook
+## Phase 10 — Your Recovery Playbook (implemented in Step 9; remaining: human source verification)
 - [ ] Research and transcribe verified U.S. PayPal policy content from official sources (URL + last-verified date per
       section)
 - [ ] `/playbook` pages; links from results and the report
 - [ ] Review: no invented policies, timelines, statistics, or guarantees
 
-## Phase 11 — Sensei Kenshi
-- [ ] `/api/chat` (streaming) with grounding rules (completed attempts only, Playbook excerpts)
-- [ ] Floating panel + `/sensei` page; history; rate limit; fallback message
-- [ ] Tests: refuses hints for in-progress scenarios; no policy invention prompts pass through
+## Phase 11 — Sensei Kenshi (implemented in Step 10 above)
+- [x] `/api/chat` with grounding rules (completed attempts only, knowledge-base records); JSON, not streaming
+- [x] Panel + `/sensei` page; rate limit; friendly failure with retry (no stored history, by decision)
+- [x] Tests: refuses hints for in-progress scenarios; no policy invention passes the guards
 
 ## Phase 12 — Hardening and launch
 - [ ] Playwright E2E: full journey through 3 modules (with Sandbox), plus degraded modes (Gemini/Zapier off)

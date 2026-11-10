@@ -1,6 +1,6 @@
 # ScamSense — Technical Architecture
 
-Status: updated for Phase 6 (Step 8: hybrid routing, Gemini personalization, Gemini reasoning evaluation; §19). Read together with `CLAUDE.md` (rules), `PRODUCT_SPEC.md` (behavior), and `DATA_MODEL.md`.
+Status: updated for Step 9 (Reveal the Red Flags + Your Recovery Playbook; §20). Earlier: Step 8 hybrid intelligence (§19). Read together with `CLAUDE.md` (rules), `PRODUCT_SPEC.md` (behavior), and `DATA_MODEL.md`.
 
 ## 1. System overview
 
@@ -104,10 +104,12 @@ Route groups: `(marketing)` public, `(auth)` sign-in/up, `(app)` authenticated a
 | `/dashboard` | App | Real progress (Phase 3): current module, overall progress, Training Funds, score, badges, modules, goal, certificate/report access, past results |
 | `/modules/[moduleKey]` | App | Module overview: locked notice, or "Start module N" (opens the Training Funds period), scenario slot statuses, Training Funds card + ledger history |
 | `/play/[attemptId]` | App, owner | **Immersive scenario** (`ScenarioPlayer`): intro → explore → decide → confirm → explain → (Sandbox checkout) → locked. Client-safe view only; a foreign attempt shows the not-found page |
-| `/play/[attemptId]/results` | App, owner, attempt COMPLETED | Feedback, wallet impact, AI comment, **Reveal the Red Flags** |
+| `/play/[attemptId]/results` | App, owner, attempt COMPLETED | Feedback, wallet impact, AI comment, debrief navigation |
+| `/play/[attemptId]/review` | App, owner, attempt COMPLETED | *(Step 9)* **Reveal the Red Flags**: read-only environment + numbered evidence markers (§20.1) |
+| `/play/[attemptId]/playbook` | App, owner, attempt COMPLETED | *(Step 9)* **Your Recovery Playbook** for this attempt (§20.2) |
 | `/modules/[moduleKey]/complete` | App, module completed | Badge, certificate preview, email form, report download |
-| `/playbook` (+ `/playbook/[section]`) | Public | Your Recovery Playbook (R21) |
-| `/sensei` | App | Sensei Kenshi full-page chat (also a floating panel, Phase 11) |
+| `/playbook` | Public | Your Recovery Playbook: the verified U.S. PayPal knowledge base by topic (R21, Step 9) |
+| `/sensei` | App | *(Step 10)* Sensei Kenshi full-page chat. The same chat opens as a side panel from the dashboard and from the debrief pages of a COMPLETED attempt; never on `/play/[attemptId]` (§21) |
 | `/modules` | App | Index of the three modules with lock states (primary nav "Modules") |
 | `/certificates` | App | Badges, certificate status, and report access per module (primary nav "Certificates") |
 | `/profile` | App | "My Profile": view and edit every profile field in place (shared field components with onboarding), sign out. Currency changes apply from the next module start |
@@ -154,6 +156,7 @@ The error shape is `{ error: { code, message } }`.
 | `GET /api/attempts/[id]/evaluation` | — | *(Step 8)* Stored evaluation status: `not_ready` · `pending` · `failed {basicAvailable, geminiAvailable}` · `complete {results}` (results only once COMPLETED). Never calls Gemini |
 | `POST /api/attempts/[id]/evaluation` | `{mode?: "ai" \| "basic"}` (strict) | *(Step 8)* Evaluates a FINALIZED attempt once (claim → one Gemini call → backend score → `record_attempt_evaluation`). Duplicate-safe (`pending` for a concurrent call, stored result once complete). `basic` only after a real failure (409 otherwise). 409 `not_finalized` |
 | `GET /api/dev/gemini-usage` | — | *(Step 8)* Development-only usage counters (404 in production) |
+| `POST /api/attempts/[id]/playbook` | — (no body) | *(Step 9)* The attempt's personal Recovery Playbook note: `ready` (gemini note or fallback) · `pending` · `unavailable`. Owner + COMPLETED only (409 `not_completed`, 404 foreign). At most ONE Gemini call per attempt (DB claim); never returns policy content |
 
 ### PayPal Sandbox checkout (Step 7, implemented; attempt-scoped so ownership is checked like every attempt route)
 | Method & path | Body | Effect |
@@ -165,18 +168,21 @@ The error shape is `{ error: { code, message } }`.
 
 `PAYMENT_CANCELLED` is no longer accepted by `/events` (400): cancellations must go through the payment service.
 
-### Completion, certificates, reports
+### Completion, certificates, reports (Step 11, implemented)
 | Method & path | Effect |
 |---|---|
-| `GET /api/modules/[moduleKey]/report` | Streams the analysis-report PDF (`Content-Disposition: attachment`). Module must be completed. Node runtime |
-| `GET /api/certificates/[moduleKey]` | Certificate data for the on-screen preview (no file download) |
-| `POST /api/certificates/[moduleKey]/email` | `{email}`: records a request and posts to the Zapier webhook (5s timeout). Returns `sent` or `failed` (retryable). Rate-limited |
+| `GET /api/modules/[moduleKey]/report` | Session user; own module must be COMPLETED (409 `module_not_completed`), unknown module 404. Streams the analysis-report PDF (`Content-Disposition: attachment; filename="ScamSense-Analysis-Report-Module-N-<Title>-<YYYY-MM-DD>.pdf"`, `Cache-Control: private, no-store`). Stored data only: no Gemini, no writes, independent of Zapier. Node runtime |
+| `GET /api/certificates/[moduleKey]` | Session user; own certificate data for the on-screen preview + badge + latest email status. No file and no URL (R25). 409 until the module is complete |
+| `POST /api/certificates/[moduleKey]/email` | `{email, requestId (uuid)}` strict. Deduplicates (idempotency key, in-flight, same address < 30 s), rate-limits (5/certificate/hour, 15/user/hour, 429), renders/stores the PDF privately, posts ONE request to the Zapier Catch Hook (8 s timeout, no retry loop). Returns `{outcome, email: {status, maskedEmail, requestedAt, errorCode}}`; `status` is `submitted` (Zapier accepted), `processing`, or `failed` (retryable). Never returns the signed URL |
 
 ### Sensei Kenshi
 | Method & path | Body | Effect |
 |---|---|---|
-| `POST /api/chat` | `{message, contextAttemptId?}` | Builds a grounded prompt (§8.3) and calls Gemini (streamed text response). Stores messages. Falls back on failure. Rate-limited per user |
-| `GET /api/chat/history` | — | Recent messages |
+| `POST /api/chat` | `{message (1–500), history? (≤12 turns, untrusted), attemptId?}` | *(Step 10, implemented)* Session user only; `attemptId` must be the caller's own (404) COMPLETED (409 `attempt_not_completed`) attempt. Builds the grounded prompt (§8.3, §21) and makes ONE structured-JSON Gemini call. Returns `{reply, sources[], followUps[], context}`; 503 `kenshi_unavailable` / 429 `kenshi_busy` are friendly and retryable (no fabricated reply). Nothing is stored |
+
+Decision (Step 10): no streaming and no `GET /api/chat/history`. Replies are short, structured JSON is validated
+before display (streaming would show unvalidated text), and conversations are not persisted (the brief asks for no
+chat memory system), so the `chat_messages` table is not created.
 
 ## 6. Scenario content model (Step 6, implemented)
 
@@ -248,7 +254,10 @@ their own row and log.
 | Wallet balances, ledger, resets | **Deterministic** | R18–R20 |
 | Unlocks, badges, completion | **Deterministic** | R7, R24 |
 | Score composition | **Deterministic** formula | See 8.4 |
-| Recovery Playbook facts | **Authored + verified** (never AI) | R21, R30 |
+| Recovery Playbook facts | **Authored + verified** (never AI): `src/content/playbook/policies.ts` | R21, R30 |
+| Scenario → policy selection, Playbook steps, limitations | **Deterministic** (`src/lib/recovery/playbook.ts`) | Step 9 |
+| Recovery Playbook personal note + step emphasis | Gemini, no policy vocabulary allowed; fallback = authored Playbook only | Step 9 |
+| Evidence shown in Reveal the Red Flags | **Deterministic** (answer key + anchors) | Gemini never adds evidence |
 | Scenario order within a module | **Deterministic** formula (§19.2); Gemini may only map custom text to approved tags | Write-once per (user, module) |
 | Scenario surface personalization | Gemini → validated narrative slots + neutral intro, fallback = authored defaults | Never changes evidence, answers, setting, or amounts |
 | Which evidence the user's reasoning addressed | Gemini proposes, validated against known IDs; fallback (after a failure, learner's choice) = keyword match | AI judges *reasoning coverage*, not truth |
@@ -273,20 +282,26 @@ Zod re-validation, deadline + bounded retries, rate limiting, usage counters). M
    reasoningExplanation, verificationFeedback, paymentBehaviorFeedback, improvementAdvice, educationalTakeaway,
    humorousComment, evaluationConfidence}`; IDs whitelisted, correctness guard, policy/statistics/points/link/mocking
    guards. No points field exists.
-4. **Chat** (Sensei Kenshi, Phase 11).
+4. **Recovery Playbook note** (`src/lib/recovery/`, Step 9, ONE call per completed attempt, category `recovery`, 15 s
+   deadline). In: outcome, decision correctness, Sandbox paid yes/no, lesson, Playbook step ids+texts, verified facts as
+   read-only context; no profile, explanation, or amounts. Out: `{scenarioId, note, emphasisStepIds}`; rejected if the
+   note mentions PayPal, protection, dispute, refund, eligibility, coverage, timeframes, digits, links, statistics.
+5. **Chat** (`src/lib/kenshi/`, Step 10, ONE call per learner question, category `chat`, 20 s deadline, rate key
+   `chat:<userId>` so chat has its own per-user budget). In: the authorized context (§21), retrieved policy records,
+   ≤6 earlier turns and the question (fenced). Out: `{reply, citedPolicyIds, followUps}`; reply guards in §21.
 
 Prompt versions are stored with each personalization and evaluation row.
 
-### 8.3 Sensei Kenshi grounding
-System prompt: identity (friendly sensei, brand tone), scope (scenarios, scam awareness, PayPal), hard rules (no
-policy invention, no guarantees, no statistics, no hints about in-progress scenarios, never request credentials). The
-context includes:
-- Profile summary.
-- **Only completed** attempts: their evidence and feedback. In-progress attempts are referenced by title only, with
-  the instruction "do not give hints."
-- Recovery Playbook excerpts (authored), with URLs to cite.
+### 8.3 Sensei Kenshi grounding (implemented in Step 10; details in §21)
+System prompt (`KENSHI_SYSTEM`): identity (calm mentor, subtle samurai flavour, "practice, not panic"), scope (scams,
+safe payments, completed scenarios, U.S. PayPal reporting/disputes/protection), not PayPal or an adviser, never
+requests credentials, answer protection, grounding order (truth / actions / explanation / stored feedback / score),
+PayPal facts only from the given verified records, no deadlines/statistics/guarantees/links. The context includes:
+- No profile data (not needed; privacy).
+- **Only completed** attempts. Unfinished scenarios: title only, with "you know nothing else about them".
+- Policy records from the Step 9 knowledge base retrieved for this question; links are attached by the server.
 
-Off-topic or unsafe requests get a polite redirect. No classifier is used (R23).
+Off-topic requests get a polite redirect. No classifier is used (R23).
 
 ### 8.4 Scoring (deterministic, `src/lib/domain/scoring.ts`, Phase 3)
 100 points per scenario, integer maths with half-up rounding, stored once per completed attempt in `scenario_scores`
@@ -425,17 +440,71 @@ Replay (practice attempt)
 - Nothing about legitimacy exists in the database during play: payments stay `pending` until completion (R10).
 - Changing preferred currency mid-module does not affect the open run. It applies to the next module run.
 
-## 11. Certificates, reports, email
+## 11. Certificates, reports, email (Step 11)
 
-- **Certificate:** a DB row created at module completion (`certificate_code` is a random, non-guessable string). It is
-  rendered on screen as an HTML component, with no PDF/download route (R25).
-- **Zapier:** `POST ZAPIER_CERTIFICATE_WEBHOOK_URL` with
-  `{secret, recipientEmail, displayName, moduleTitle, completedAt, certificateCode}`. The Zap verifies the shared
-  secret and sends an HTML email built from those fields. It uses a 5s timeout with no automatic retry loop, and the user
-  can press retry. Status is stored in `certificate_email_requests`. The email address is stored only for that request.
-- **Report PDF:** `@react-pdf/renderer` in a Node-runtime route. Data is gathered from the DB only (attempts,
-  evaluations, ledger, answer-key evidence titles). Brand fonts are embedded. The report is generated on demand and
-  not stored.
+### 11.1 Module completion and rewards
+- `complete_scenario_attempt` (unchanged) sets `module_runs.completed_at` + closing balance exactly once, when both
+  ORIGINAL attempts of the run are COMPLETED (a replay never completes a run).
+- `20261115090000_module_rewards.sql` adds an AFTER UPDATE trigger on that null to not-null transition that calls
+  `award_module_rewards(run)`: one `badges` row (badge key per module, `module_score` = sum of the two original
+  attempts' immutable `scenario_scores`, max 200, `awarded_at` = run completion) and one `certificates` row (random
+  48-bit code `SS<n>-XXXX-XXXX-XXXX`, `recipient_name` = display-name snapshot, `module_title` snapshot,
+  `completed_at` = run completion). Inserts use `on conflict do nothing`; both tables are unique per run and per
+  user+module, the code is unique, and update triggers make both rows final. Runs completed earlier are backfilled by
+  the migration. `ensure_module_rewards(user, module)` (service_role) is a no-op repair path used only if a completed
+  run has no certificate.
+- Next-module unlock stays derived from `module_runs.completed_at` (unchanged). Dashboard, profile, and certificates
+  read `badges` through RLS and fall back to completed runs if the table is unavailable (same moment by construction).
+
+### 11.2 Certificate and report PDFs
+- `@react-pdf/renderer` (Node runtime; `serverExternalPackages`), brand tokens in `src/lib/pdf/theme.ts`, embedded
+  Nunito + Inter (latin + latin-ext fallback, OFL) from `src/assets/fonts`, included in deployments via
+  `outputFileTracingIncludes`.
+- **Certificate:** `CertificatePreview` (HTML) and `CertificateDocument` (PDF, US Letter landscape) render the same
+  `CertificateView` (dates formatted in UTC so both always agree). There is no certificate download route (R25). The
+  PDF is rendered once per certificate and design version, stored at
+  `certificate-pdfs/<certificate uuid>/v1/ScamSense-Certificate-<Title>-<ID>.pdf` in a PRIVATE bucket (no storage
+  policies for browser roles), and shared only with Zapier as a signed URL (24 h, `download=` file name,
+  `application/pdf`). The signed URL is never sent to the browser.
+- **Report:** `src/lib/report/build.ts` (pure) + `server.ts` (session-client reads, explicit user filter). Original
+  attempts only: scores, decision, justification excerpt (up to 320 characters), stored feedback summary,
+  recognized and missed (core first) evidence, unsupported assumptions, verification actions done / not done
+  (authored labels), payment meaning, improvement advice and takeaway (stored evaluation; the humorous comment is
+  excluded), Training Funds start/end/spending/scam losses with a "fictional, Sandbox only" notice, key lessons
+  (answer key), and official references (Step 9 policy mapping + answer-key references). Missing data is stated,
+  never guessed.
+
+### 11.3 Certificate email through the existing Zap
+The Zap already exists and is not rebuilt: **Webhooks by Zapier, Catch Hook**, then **Gmail, Send Email** (sender
+`scamsense.certificates@gmail.com`), mapping `recipientEmail`, `displayName`, `moduleTitle`.
+
+Payload (explicit allowlist, `src/lib/rewards/zapier.ts`): `recipientEmail`, `displayName`, `moduleTitle`,
+`certificateId`, `completionDate`, `certificatePdfUrl`. Nothing else (no income, profile details, justifications,
+Training Funds, PayPal data, credentials, or keys). `ZAPIER_WEBHOOK_SECRET` is not sent or required: a Catch Hook
+cannot verify it without an added Filter step, and sending it would copy it into Zapier's task history. The
+server-only webhook URL is the access control.
+
+Flow: session user, then certificate ownership (RLS + user filter), then `begin_certificate_email_request` (row
+PROCESSING; `existing` / `in_flight` / `duplicate` / `rate_limited` short-circuit without sending), then the signed PDF
+URL, then one POST, then `finish_certificate_email_request` (SUBMITTED on 2xx, else FAILED with `http_error` /
+`timeout` / `network` / `not_configured`; `pdf_unavailable` skips Zapier so an email is never sent without its
+attachment). A PROCESSING row older than 2 minutes counts as failed (`abandoned`). Statuses shown: not submitted,
+processing, "Your certificate email request has been submitted." (accepted by Zapier, **not** a delivery
+confirmation; none exists), failed (calm message + retry). Badges, certificates, and reports never depend on Zapier
+(R27).
+
+**One-time Gmail attachment mapping** (the only Zap change):
+1. zapier.com, **Zaps**, open the existing certificate Zap, **Edit**.
+2. After sending one certificate email from ScamSense (Step 11 migration applied), open trigger step 1 (Catch Hook),
+   **Test**, **Find new records**, and select the newest record, so the sample includes `certificateId`,
+   `completionDate`, and `certificatePdfUrl`.
+3. Open step 2, **Gmail: Send Email**, **Configure**. Leave the To / Subject / Body mappings as they are (optionally
+   add *Certificate Id* and *Completion Date* to the body).
+4. Scroll to **Attachments**, click the field, choose **1. Catch Hook** in the data picker, and select
+   **Certificate Pdf Url**. Zapier downloads the file from that URL and attaches it as `ScamSense-Certificate-...pdf`.
+5. **Continue**, **Test step**. Open the received email and check that the PDF opens and shows the right name, module,
+   date, and ID. Signed links last 24 hours: if the sample is older, send a new request and repeat steps 2-5.
+6. **Publish** (or turn the Zap **On**), then send one more from the completion page to confirm end to end.
 
 ## 12. Security and privacy
 
@@ -449,7 +518,7 @@ Replay (practice attempt)
   decisions/justifications write-once, and COMPLETED reachable only through `complete_scenario_attempt`.
 - `SUPABASE_SERVICE_ROLE_KEY` (legacy service-role JWT or new `sb_secret_…` key) is used only in server code and only
   for those gameplay writes. Without it, reads keep working and gameplay writes return a calm 503.
-- Rate limits (simple DB-backed counters): chat, certificate email, attempt creation.
+- Rate limits: chat (in-process, Step 10); certificate email (DB-counted in `begin_certificate_email_request`).
 - No real credentials are ever requested. Simulation inputs are inert (R33). CSP restricts `frame-src` and
   `script-src` to self + PayPal SDK domains.
 - Justification text is personal data. It is stored and shown only to its owner and is not logged.
@@ -525,7 +594,7 @@ Replay (practice attempt)
     capture flow; for a replay, only the practice `payment_transactions` row (see §9).
   - Phase 6 completion: evaluator → `ReasoningAssessment` → `scoreScenario(rubric, behavior, assessment)` →
     `complete_scenario_attempt` (score + payment classification from the answer key + module completion, one
-    transaction). Phase 9 hangs badge/certificate rows off the module completion.
+    transaction). Step 11: a trigger on that completion awards the badge + certificate (section 11.1).
 
 ### 17.1 Security and idempotency guarantees (verified in the Step 5 review)
 - Browser roles (`anon`, `authenticated`) can only SELECT their own rows in the four gameplay tables. They cannot
@@ -651,3 +720,98 @@ writes use the trusted writer with the session user id; all five new tables are 
 answer keys stay server-only (the client bundle was scanned: no key, prompt, or evidence ID). Before the migration is
 applied the app degrades (profile reads fall back to legacy columns; descriptions can't be saved; personalization falls
 back; evaluation reports a calm error).
+
+## 20. Post-scenario debrief (Step 9)
+
+Journey: completion → results (`/results`) → **Reveal the Red Flags** (`/review`) → **Your Recovery Playbook**
+(`/playbook`) → module. `PostScenarioNav` links the three pages; each is a server component that loads the owner's
+attempt through the session client (RLS + user filter → not found for anyone else) and redirects unfinished attempts
+to the player. None of them calls PayPal; only the Playbook note may call Gemini, once per attempt.
+
+### 20.1 Reveal the Red Flags
+- **Data** (`src/lib/review/`): `reviewFromLoaded` refuses non-COMPLETED attempts (`NotCompletedError`), rebuilds the
+  exact played render with `buildClientView` (same tokens, same stored personalization), and builds `ReviewView`:
+  evidence in answer-key order (number, anchor, type, title, explanation, location, `seenDuringAttempt`, reasoning
+  status from the stored evaluation), unsupported assumptions, decision and truth. Reads only.
+- **Semantic target mapping** (`locate.ts`, pure): walks the render and maps every anchor (`anchor`, `…Anchor`) to
+  `{appId, target, requires}`. Targets: chat thread (+ contact details), mail message (+ document attachment index),
+  browser page, wallet tab, marketplace page (home/product + specs/reviews tab/seller/chat/checkout), seller-hub tab
+  (+ order). The most specific place wins. Tests prove all 50 evidence targets of the six scenarios are located.
+- **Read-only environment**: `SimApi` gained `readOnly` and `reveal {appId, target, nonce}`. The review passes no-op
+  `record`/`decide`, `interactive: false` (decisions and reply chips disabled), and `recorded` = the learner's actions
+  followed by every other action (all content visible, learner's path first). `useCanNavigate()` keeps navigation-only
+  controls (mail links, "Buy now" → checkout page) usable; `useReveal(appId, fn)` lets each app open the right place.
+  In review, invoice documents open inline (instead of a modal) so markers can sit on them.
+- **Markers** (`src/components/review/`): an overlay above the workspace. `geometry.ts` measures each anchor's VISIBLE
+  box relative to the container (union of children for `display: contents` key/value rows; clipped by scrolling
+  ancestors; hidden apps have no box), re-measured on scroll, resize, and DOM mutations of the environment only.
+  Outlines don't take pointer events; markers are buttons with labels; collisions are nudged. One non-modal
+  explanation (`role="dialog"`) at a time, placed below/above its target and clamped to the container; focus moves
+  into it and returns on Close/Escape. The evidence guide below lists every item with "Show in scenario".
+- Nothing in the review sends a request: there is no way for it to create attempts, events, payments, or scores.
+
+### 20.2 Your Recovery Playbook
+- **Knowledge base** `src/content/playbook/policies.ts` (versioned, Zod; `2026-11-10.1`, nine records, all verified):
+  verified records carry key facts, eligibility conditions, procedures, and exclusions (each item verbatim or flagged
+  as a summary) with `lastVerified` and the page's own `pageUpdated`; `source_unavailable` records carry none (schema
+  refinement + tests). Curated offline from the official pages: nothing is fetched from PayPal at runtime. Authored
+  limitations in `distinctions.ts`; server-only per-scenario guidance and policy mapping in `scenarios.server.ts`.
+- **Assembly** `src/lib/recovery/playbook.ts` (pure): `selectPolicyIds` = core ∪ whenPaid ∪ whenAffected; steps of
+  kind `paypal` cite any verified item of a record (fact, eligibility, procedure, or exclusion) and are shown only with
+  it and its source (otherwise dropped); `policyView` builds the card data for both Playbook pages; "Sandbox isn't
+  coverage" only for payment scenarios.
+- **Sensei Kenshi** (§21) retrieves the same records; its reply guard accepts a timeframe only when a retrieved
+  verified item states it.
+- **Personal note** `src/lib/recovery/{prompt,schema,server}.ts`: `claim_recovery_playbook` (DB lock; `ready`/`busy`/
+  `claimed`) → one `generateJson` (`recovery`) → `parsePlaybookNote` → `complete_recovery_playbook`. Invalid output or
+  Gemini failure → stored `fallback`; rate-limited → left pending (claim expires after 45 s); Gemini not configured or
+  table missing → `unavailable` with no call. The page reads the stored note; the client POSTs once only when none is
+  stored.
+
+## 21. Sensei Kenshi (Step 10)
+
+**Where he appears.** The dashboard card (`KenshiLauncher variant="card"`), the `/sensei` page, and "Ask Sensei Kenshi"
+in `PostScenarioNav` (Results, Reveal the Red Flags, Recovery Playbook of a COMPLETED attempt, opened focused on that
+attempt). The launcher is a native `<dialog>` side panel (full screen below 640 px): focus trapped, Esc closes, focus
+returns. The scenario player (`/play/[attemptId]`) has no entry point: `navItemsFor()` drops the "Sensei Kenshi"
+primary-nav item there (`isGameplayPath`), and a test forbids any Kenshi import or `/sensei` link in
+`src/components/scenario/**` and the player page. Visibility is not the protection; the API is (below).
+
+**Answer protection (server, before any prompt exists)**, `src/lib/kenshi/server.ts`:
+1. `requireApiUser()` (cookie session verified with Supabase Auth) + onboarded profile.
+2. With `attemptId`: `loadAttempt` reads through the session client (RLS + explicit `user_id` filter), so foreign or
+   missing attempts are a 404. `state !== COMPLETED` → 409 before the answer key is read. Only then is that ONE
+   scenario's template loaded; `buildAttemptContext` re-checks COMPLETED (defence in depth).
+3. Without `attemptId`: only `scenario_attempts` rows with `state = 'COMPLETED'` are queried; their evaluations and
+   scores are filtered to those ids. Unfinished and locked scenarios appear by public title only; their templates are
+   never read.
+4. Gemini never receives the answer-key library, other scenarios' evidence, or unfinished data, so no prompt injection
+   can extract it. As a backstop, `parseKenshiOutput` rejects a reply that names an unfinished scenario in the same
+   sentence as a verdict word (scam, legit, genuine, safe, red flag, …); follow-ups are filtered the same way.
+
+**Completed-attempt context** (`context.ts`, pure): scenario truth (fraudulent/legitimate), appropriate decisions, all
+of that scenario's evidence (type, title, explanation), key lessons, safest next step; the learner's recorded actions
+(labels; verification flagged) and the verification actions not done; the locked decision and story outcome; the
+verified Sandbox capture (if any); the justification (fenced); the STORED Step 8 evaluation (feedback fields,
+recognized/missed evidence titles, assumptions) and score. A missing evaluation or score is "not available", never
+invented. Each attempt id is its own context: a replay uses its own rows and is labelled PRACTICE #n ("never changes
+the official record"); the original is labelled ORIGINAL. The overview (dashboard) summarizes each completed scenario's
+ORIGINAL attempt and counts replays.
+
+**Policy grounding** (`policies.ts`, pure): no records unless the question touches PayPal, protection, reporting, or
+recovery; then topic matches (verified first), then the attempt's Step 9 `selectPolicyIds` mapping, max 4. Verified
+records carry their facts; `source_unavailable` records carry title + id only and the prompt says "NOT VERIFIED: only
+point to the official page". `sources[]` in the response come from those records (cited ids whitelisted; if the reply
+mentions PayPal without citing, the retrieved records are shown), never from model text.
+
+**Reply guards** (`schema.ts`): reject deadlines/timeframes (digits or number words + days/weeks/months), percentages,
+un-negated "guarantee", refund/coverage promises ("you'll get a refund", "you're covered"), URLs and real domains
+(fictional `.example` domains allowed), emails other than `phishing@paypal.com`, phone numbers, credential requests,
+and the unfinished-scenario leak above. A rejected reply is retried once by `callGeminiJson`, then the API answers 503.
+
+**Conversation and efficiency.** The client keeps the conversation (not stored) and sends at most 6 recent turns since
+the last context switch (switching to or from a scenario inserts a divider and restarts history, so contexts never
+mix); the server bounds history again and fences every turn as untrusted. One Gemini request per question; none to
+open, close, switch, or show suggestions (static per mode; Gemini's validated `followUps` replace them after a reply).
+Retry re-sends the same question in the same bubble. Errors show links to the Recovery Playbook and the attempt's
+results.

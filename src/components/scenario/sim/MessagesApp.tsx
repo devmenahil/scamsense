@@ -6,7 +6,7 @@ import { cn } from "@/lib/cn";
 import { isAvailable } from "@/lib/domain/scenarioStateMachine";
 import { Icon } from "@/components/icons/Icon";
 import { ChatThread } from "./ChatThread";
-import { useSim } from "./SimContext";
+import { useReveal, useSim } from "./SimContext";
 import { Avatar } from "./primitives";
 
 /**
@@ -40,6 +40,11 @@ export function MessagesApp({
     if (newest) openThread(newest.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navRequest?.nonce]);
+
+  // Review (read-only): open the conversation that holds a piece of evidence.
+  useReveal(appId, (t) => {
+    if (t.kind === "thread") openThread(t.threadId);
+  });
 
   return (
     <div className="grid h-full min-h-[30rem] md:grid-cols-[17rem_minmax(0,1fr)]">

@@ -10,7 +10,7 @@ It uses PayPal **Sandbox** only. No real money ever moves.
 - Specification: [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) · Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
   · Data model: [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) · Build plan: [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
 
-## Current status: Phase 6 / Step 8 (hybrid routing, Gemini personalization, Gemini reasoning evaluation)
+## Current status: Step 11 (module rewards, certificates, reports, Zapier email)
 
 What works today:
 
@@ -31,19 +31,40 @@ What works today:
   and reused; ONE Gemini evaluation per finished attempt (evidence recognition, feedback, advice, and a separate witty
   comment) with backend scoring; results page. See [Gemini (Step 8)](#gemini-step-8).
 
-Not built yet (by design): Reveal the Red Flags walkthrough, verified Recovery Playbook content (Step 9), badge and
-certificate records, Zapier email, PDF reports, Sensei Kenshi.
+- **Post-scenario debrief (Step 9):** _Reveal the Red Flags_ replays the completed scenario read-only with numbered,
+  accessible evidence markers (red flag / worth verifying / positive verification); _Your Recovery Playbook_ gives
+  scenario-specific steps grounded in a versioned U.S. PayPal knowledge base (`src/content/playbook/`): reporting
+  phishing and unauthorized activity, the User Agreement's unauthorized-transaction rules, Purchase and Seller
+  Protection (eligibility, process, exclusions), and dispute timeframes. All nine official pages were verified on
+  2026-11-10. See [docs/PRODUCT_SPEC.md §6](docs/PRODUCT_SPEC.md).
+- **Sensei Kenshi (Step 10):** a Gemini-powered learning companion, opened from the dashboard card, the `/sensei`
+  page, or "Ask Sensei Kenshi" on a completed attempt's Results, Reveal the Red Flags, and Recovery Playbook pages. He
+  is never available on the scenario player. The server only lets him see the learner's own COMPLETED attempts
+  (unfinished scenarios are known by title only), grounds PayPal answers in the Step 9 knowledge base with official
+  links, and costs one Gemini request per question. Conversations aren't stored. See
+  [docs/PRODUCT_SPEC.md §7](docs/PRODUCT_SPEC.md).
 
-| Page                                            | Route                                                 |
-| ----------------------------------------------- | ----------------------------------------------------- |
-| Landing                                         | `/`                                                   |
-| Sign up / Sign in / Forgot password             | `/sign-up`, `/sign-in`, `/forgot-password`            |
-| Onboarding                                      | `/onboarding`                                         |
-| Dashboard · Modules · Certificates · My Profile | `/dashboard`, `/modules`, `/certificates`, `/profile` |
-| Scenario player (incl. PayPal Sandbox checkout) | `/play/[attemptId]`                                   |
-| Scenario results (completed attempts)           | `/play/[attemptId]/results`                           |
-| Sensei Kenshi (design shell)                    | `/sensei`                                             |
-| Your Recovery Playbook                          | `/playbook`                                           |
+- **Module rewards (Step 11):** finishing both original scenarios of a module awards its badge (Scam Spotter, Fraud
+  Detective, ScamSense Guardian) and ONE Certificate of Completion, created by the database at the moment the module
+  completes (idempotent: refreshes, replays, and retries never award twice). The certificate is shown on screen only
+  (no download button); learners can email themselves a PDF copy through the existing Zapier Catch Hook → Gmail Zap.
+  Each module has a downloadable **analysis report** PDF built from stored results only (no Gemini call). See
+  [Certificates, reports, and Zapier email](#certificates-reports-and-zapier-email).
+
+Not built yet (by design): final end-to-end test pass, deployment.
+
+| Page                                                          | Route                                                 |
+| ------------------------------------------------------------- | ----------------------------------------------------- |
+| Landing                                                       | `/`                                                   |
+| Sign up / Sign in / Forgot password                           | `/sign-up`, `/sign-in`, `/forgot-password`            |
+| Onboarding                                                    | `/onboarding`                                         |
+| Dashboard · Modules · Certificates · My Profile               | `/dashboard`, `/modules`, `/certificates`, `/profile` |
+| Scenario player (incl. PayPal Sandbox checkout)               | `/play/[attemptId]`                                   |
+| Scenario results (completed attempts)                         | `/play/[attemptId]/results`                           |
+| Reveal the Red Flags (completed attempts)                     | `/play/[attemptId]/review`                            |
+| Recovery Playbook for an attempt                              | `/play/[attemptId]/playbook`                          |
+| Sensei Kenshi (also a panel on the dashboard + debrief pages) | `/sensei`                                             |
+| Your Recovery Playbook                                        | `/playbook`                                           |
 
 ## Getting started
 
@@ -93,6 +114,14 @@ gameplay writes.
      functions `claim_scenario_personalization`, `complete_scenario_personalization`, `link_attempt_personalization`,
      `claim_attempt_evaluation`, `fail_attempt_evaluation`, `record_attempt_evaluation`. Until it is applied the app
      keeps working with authored defaults, but custom descriptions can't be saved and scenarios can't be evaluated.
+   - `20261114090000_recovery_playbooks.sql` (Step 9): `attempt_recovery_playbooks` (one stored personal Playbook
+     note per completed attempt) and the `service_role`-only `claim_recovery_playbook` / `complete_recovery_playbook`.
+     Until it is applied, the Playbook works fully but shows no AI note (and never calls Gemini for it).
+   - `20261115090000_module_rewards.sql` (Step 11): `badges`, `certificates`, `certificate_email_requests`, the
+     award trigger on module completion (plus a backfill for modules completed earlier), the `service_role`-only
+     `ensure_module_rewards`, `begin_certificate_email_request`, `finish_certificate_email_request`, and the
+     **private** storage bucket `certificate-pdfs`. Until it is applied, badges still show (from completed modules)
+     and the report downloads, but certificates and certificate email are unavailable.
 4. **Auth URLs.** Authentication → URL Configuration: Site URL `http://localhost:3000` (your deployed URL in
    production) and add `http://localhost:3000/auth/confirm` to Redirect URLs, so confirmation and reset links work.
 5. **Email confirmation.** Authentication → Sign In / Providers → Email → "Confirm email".
@@ -178,35 +207,74 @@ AI Studio → Rate limits).
 
 When Gemini is called — and when it isn't:
 
-| Moment                                                                   | Gemini requests                                                               |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| Routing a predefined-only profile                                        | 0                                                                             |
-| Routing a profile with a meaningful custom "Other" description           | 1 per new description version (cached by fingerprint; reused by every module) |
-| Vague descriptions ("something else"), exact label matches, custom goals | 0                                                                             |
-| First play of each scenario (all six)                                    | 1 personalization                                                             |
-| Refresh, resume, opening apps/emails/invoices, replays                   | 0 (stored narrative reused)                                                   |
-| Finishing an attempt (original or replay)                                | 1 evaluation (feedback + witty comment together)                              |
-| Viewing results again                                                    | 0                                                                             |
+| Moment                                                                     | Gemini requests                                                               |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Routing a predefined-only profile                                          | 0                                                                             |
+| Routing a profile with a meaningful custom "Other" description             | 1 per new description version (cached by fingerprint; reused by every module) |
+| Vague descriptions ("something else"), exact label matches, custom goals   | 0                                                                             |
+| First play of each scenario (all six)                                      | 1 personalization                                                             |
+| Refresh, resume, opening apps/emails/invoices, replays                     | 0 (stored narrative reused)                                                   |
+| Finishing an attempt (original or replay)                                  | 1 evaluation (feedback + witty comment together)                              |
+| Viewing results again                                                      | 0                                                                             |
+| Reveal the Red Flags (any number of visits)                                | 0                                                                             |
+| First visit to an attempt's Recovery Playbook (after the Step 9 migration) | 1 (short note; stored and reused)                                             |
+| Each question to Sensei Kenshi (Step 10)                                   | 1 (opening/closing the chat, suggestions, and switching context: 0)           |
 
 So a predefined profile uses about **12 requests** for the six scenarios. Usage counters (requests, retries, cache
 hits, tokens, errors, rate-limit and fallback events) are at `GET /api/dev/gemini-usage` in development only.
 
 If Gemini is unavailable: routing uses predefined tags (neutral context for custom text), scenarios use the authored
 story details (stored as a tracked fallback), and evaluation offers "Try again" or clearly labelled basic feedback.
-No points or AI text are ever invented, and evaluation can never trigger a PayPal capture.
+No points or AI text are ever invented, and evaluation can never trigger a PayPal capture. Sensei Kenshi shows a
+friendly "try again" message with links to the Recovery Playbook (and the attempt's results); he never shows a
+made-up reply. Chat uses its own per-user budget (`chat:<user>`), so chatting can't use up the budget for scenario
+feedback; the global `GEMINI_MAX_RPM` is shared.
+
+## Certificates, reports, and Zapier email
+
+**Rewards.** When the second original scenario of a module completes, `complete_scenario_attempt` sets the module
+run's completion (once). A database trigger then inserts one badge (with the frozen module score, out of 200) and one
+certificate (random ID such as `SS1-7F3A-91C2-0B4E`, the learner's display name and the module title as snapshots).
+Unique constraints and immutability triggers make duplicates impossible; practice replays never complete a run.
+
+**Certificate.** `/modules/[moduleKey]/complete` and `/certificates` show it on screen. There is no download route.
+The PDF exists only as the email attachment: the server renders it once (`@react-pdf/renderer`, embedded Nunito +
+Inter), stores it in the private `certificate-pdfs` bucket, and gives Zapier a signed URL valid for 24 hours.
+
+**Analysis report.** "Download Analysis Report" calls `GET /api/modules/[moduleKey]/report`: session user only, own
+completed module only (409 otherwise), generated on demand from stored results, `Cache-Control: private, no-store`.
+
+**Email via the existing Zap.** `POST /api/certificates/[moduleKey]/email` sends one JSON request to
+`ZAPIER_CERTIFICATE_WEBHOOK_URL` (server-only):
+
+```json
+{
+  "recipientEmail": "learner@example.com",
+  "displayName": "Test Learner",
+  "moduleTitle": "Spot the Trap",
+  "certificateId": "SS1-7F3A-91C2-0B4E",
+  "completionDate": "November 10, 2026",
+  "certificatePdfUrl": "https://<project>.supabase.co/storage/v1/object/sign/certificate-pdfs/…pdf?token=…&download=…"
+}
+```
+
+The first three names are the ones the Zap already maps; keep them. The only Zap change needed is mapping
+`certificatePdfUrl` into Gmail's **Attachments** field (step-by-step instructions: docs/ARCHITECTURE.md §11.3). A
+"submitted" status means Zapier accepted the request, not that Gmail delivered it. `ZAPIER_WEBHOOK_SECRET` is not
+used (a Catch Hook can't verify it without an extra filter step).
 
 ## Scripts
 
-| Command                       | Purpose                                                                                                                                                                                                                                                                                                                               |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`                 | Development server                                                                                                                                                                                                                                                                                                                    |
-| `npm run build` / `npm start` | Production build and server                                                                                                                                                                                                                                                                                                           |
-| `npm run lint`                | ESLint                                                                                                                                                                                                                                                                                                                                |
-| `npm run typecheck`           | TypeScript (`strict`)                                                                                                                                                                                                                                                                                                                 |
-| `npm test`                    | Vitest unit tests (env guard, currency + money, training budget, wallet ledger, progression/unlocks/replays, scoring, profile/auth validation, route rules, migration ↔ code consistency, navigation)                                                                                                                                 |
-| `npm run test:integration`    | **Live** tests against your Supabase project and a running app (`APP_URL`, default `http://localhost:3000`). Creates fictional `@example.com` accounts. Needs "Confirm email" off, every migration, and `SUPABASE_SERVICE_ROLE_KEY`; the PayPal suite also creates real (unapproved) Sandbox orders and needs the Sandbox credentials |
-| `npm run test:gemini`         | **Live** Gemini check (~20 requests, spaced for free-tier limits): real classification, personalization of all six scenarios for two profiles, and evaluation of sample explanations, through the same validators the server uses. Set `GEMINI_LIVE_REPORT=<path>` to save examples and measured usage as JSON                        |
-| `npm run format`              | Prettier (with Tailwind class sorting)                                                                                                                                                                                                                                                                                                |
+| Command                       | Purpose                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                 | Development server                                                                                                                                                                                                                                                                                                                                                                                                |
+| `npm run build` / `npm start` | Production build and server                                                                                                                                                                                                                                                                                                                                                                                       |
+| `npm run lint`                | ESLint                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `npm run typecheck`           | TypeScript (`strict`)                                                                                                                                                                                                                                                                                                                                                                                             |
+| `npm test`                    | Vitest unit tests (env guard, currency + money, training budget, wallet ledger, progression/unlocks/replays, scoring, profile/auth validation, route rules, migration ↔ code consistency, navigation)                                                                                                                                                                                                             |
+| `npm run test:integration`    | **Live** tests against your Supabase project and a running app (`APP_URL`, default `http://localhost:3000`). Creates fictional `@example.com` accounts. Needs "Confirm email" off, every migration, and `SUPABASE_SERVICE_ROLE_KEY`; the PayPal suite also creates real (unapproved) Sandbox orders and needs the Sandbox credentials; the Kenshi suite makes 4 Gemini chat requests (`KENSHI_LIVE=0` skips them) |
+| `npm run test:gemini`         | **Live** Gemini check (~20 requests, spaced for free-tier limits): real classification, personalization of all six scenarios for two profiles, and evaluation of sample explanations, through the same validators the server uses. Set `GEMINI_LIVE_REPORT=<path>` to save examples and measured usage as JSON                                                                                                    |
+| `npm run format`              | Prettier (with Tailwind class sorting)                                                                                                                                                                                                                                                                                                                                                                            |
 
 ## Project layout
 
@@ -215,7 +283,8 @@ src/app/(marketing)   public pages: landing, Recovery Playbook
 src/app/(auth)        sign-in / sign-up
 src/app/(app)         app shell + dashboard, modules, play, profile, certificates, sensei
 src/components/ui     brand primitives
-src/components/…      brand, icons, layout, dashboard, scenario, feedback, certificate, chat
+src/components/…      brand, icons, layout, dashboard, scenario, feedback, certificate, review, playbook, kenshi,
+                      rewards (badges), report (download button)
 src/content           module definitions, onboarding option lists
 src/lib               env validation, navigation, formatting, demo data (shells only)
 src/lib/supabase      Supabase SSR server client
@@ -224,6 +293,10 @@ src/lib/profile       profile schemas and DB mapping
 src/lib/domain        pure rules: money, currency, Training Funds, wallet, progression, scoring, state machine
 src/lib/scenario      attempt service + client-safe view (no answer key)
 src/lib/payments      PayPal Sandbox: pure checkout rules, Orders v2 client, payment service
+src/lib/kenshi        Sensei Kenshi: context gating, policy retrieval, prompt, reply guards, service
+src/lib/rewards       badges, certificates, email status, Zapier client, private PDF storage
+src/lib/report        analysis-report model (pure) + loader
+src/lib/pdf           server-side PDFs (certificate attachment, analysis report) + brand fonts (src/assets/fonts)
 src/middleware.ts     session refresh + route protection
 supabase/migrations   SQL migrations (run in the Supabase SQL Editor)
 tests/integration     live Supabase tests

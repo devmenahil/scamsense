@@ -41,6 +41,8 @@ export interface ModuleDefinition {
   summary: string;
   /** Badge awarded when both scenarios are completed (R24). */
   badgeName: string;
+  /** Stable badge id stored in `badges.badge_key` (Step 11 migration; drift-tested). */
+  badgeKey: "scam-spotter" | "fraud-detective" | "scamsense-guardian";
   scenarios: readonly [ScenarioSlot, ScenarioSlot];
 }
 
@@ -77,6 +79,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     focus: "Awareness",
     summary: "Notice the obvious warning signs before you click, share, or pay.",
     badgeName: "Scam Spotter",
+    badgeKey: "scam-spotter",
     scenarios: slots("spot-the-trap", 1, ["The Security Check", "Your Account Needs Attention"], [500, 800]),
   },
   {
@@ -87,6 +90,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     focus: "Recognition",
     summary: "Stay steady when urgency, impersonation, and familiar branding push you to act fast.",
     badgeName: "Fraud Detective",
+    badgeKey: "fraud-detective",
     scenarios: slots(
       "trust-under-pressure",
       2,
@@ -102,6 +106,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     focus: "Critical thinking",
     summary: "Work through multi-step situations where the clues are subtle and mixed.",
     badgeName: "ScamSense Guardian",
+    badgeKey: "scamsense-guardian",
     scenarios: slots("outsmart-the-scam", 3, ["The Job Opportunity", "The Seller's Dilemma"], [1500, 2000]),
   },
 ] as const;

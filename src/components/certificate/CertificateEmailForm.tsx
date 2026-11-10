@@ -1,50 +1,98 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { z } from "zod";
+import { useRef, useState, type FormEvent } from "react";
+import { apiRequest } from "@/lib/api/client";
+import {
+  certificateEmailRequestSchema,
+  EMAIL_STATUS_COPY,
+  type EmailStatusView,
+} from "@/lib/rewards/emailStatus";
 import { Button } from "@/components/ui/Button";
 import { FeedbackBanner } from "@/components/ui/FeedbackBanner";
 import { Input } from "@/components/ui/Input";
 
-const emailSchema = z.email("Enter an email address like name@example.com.");
+const emailField = certificateEmailRequestSchema.shape.email;
 
 /**
- * Optional certificate email (R25). Phase 1 validates the address and explains that sending is not connected yet;
- * nothing is sent or stored. POST /api/certificates/[moduleKey]/email → Zapier replaces this in Phase 9.
+ * Optional certificate email (R25) through the existing Zapier → Gmail workflow.
+ * - One request id per intentional send. If the network drops mid-request, "Try again" reuses the same id, so the
+ *   server returns the original request instead of sending twice. After a final answer, the next send gets a new id.
+ * - The button is disabled while a request is in flight (no accidental double clicks).
+ * - Status copy never claims delivery: "submitted" means Zapier accepted the request.
  */
-export function CertificateEmailForm() {
-  const [error, setError] = useState<string>();
-  const [notice, setNotice] = useState(false);
+export function CertificateEmailForm({
+  moduleKey,
+  initialStatus,
+}: {
+  moduleKey: string;
+  initialStatus: EmailStatusView;
+}) {
+  const [status, setStatus] = useState<EmailStatusView>(initialStatus);
+  const [fieldError, setFieldError] = useState<string>();
+  const [requestError, setRequestError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  /** Id of a request whose outcome we don't know yet (network failure); reused on retry. */
+  const pendingId = useRef<string | null>(null);
 
-  function onSubmit(e: FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const value = String(new FormData(e.currentTarget).get("email") ?? "").trim();
-    const parsed = emailSchema.safeParse(value);
+    if (busy) return;
+    const parsed = emailField.safeParse(String(new FormData(e.currentTarget).get("email") ?? ""));
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message);
-      setNotice(false);
+      setFieldError(parsed.error.issues[0]?.message);
       return;
     }
-    setError(undefined);
-    setNotice(true);
+    setFieldError(undefined);
+    setRequestError(undefined);
+    setBusy(true);
+    const requestId = (pendingId.current ??= crypto.randomUUID());
+    setStatus((s) => ({ ...s, status: "processing" }));
+    const res = await apiRequest<{ email: EmailStatusView; outcome: string }>(
+      `/api/certificates/${moduleKey}/email`,
+      { method: "POST", body: { email: parsed.data, requestId } },
+    );
+    setBusy(false);
+    if (res.ok) {
+      pendingId.current = null;
+      setStatus(res.data.email);
+      return;
+    }
+    if (res.error.code !== "network") pendingId.current = null; // the server answered: a retry is a new request
+    if (res.error.fields?.email) setFieldError(res.error.fields.email);
+    setRequestError(res.error.message);
+    setStatus((s) => ({ ...s, status: "failed" }));
   }
 
+  const copy = EMAIL_STATUS_COPY[status.status];
+  const label =
+    status.status === "submitted"
+      ? "Send again"
+      : status.status === "failed"
+        ? "Try again"
+        : "Email my certificate";
+
   return (
-    <form noValidate onSubmit={onSubmit} className="flex flex-col gap-4">
+    <form noValidate onSubmit={onSubmit} className="flex flex-col gap-4" aria-busy={busy}>
       <Input
         label="Email address"
         name="email"
         type="email"
         autoComplete="email"
-        hint="Optional. Used only to send this certificate."
-        error={error}
+        inputMode="email"
+        maxLength={254}
+        hint="Optional. Used only to send you this certificate as a PDF."
+        error={fieldError}
+        disabled={busy}
       />
-      <Button type="submit" variant="secondary">
-        Email my certificate
+      <Button type="submit" variant="secondary" loading={busy} disabled={busy}>
+        {busy ? "Sending…" : label}
       </Button>
-      {notice && (
-        <FeedbackBanner tone="info" title="Not sent yet." live>
-          Certificate email is connected in a later phase. Nothing was sent or stored.
+      {status.status !== "not_submitted" && (
+        <FeedbackBanner tone={status.status === "failed" ? "look-again" : "info"} title={copy.title} live>
+          {status.status === "failed" && requestError ? requestError : copy.body}
+          {status.maskedEmail && status.status !== "processing" && (
+            <span className="mt-1 block text-caption">Last request: {status.maskedEmail}</span>
+          )}
         </FeedbackBanner>
       )}
     </form>

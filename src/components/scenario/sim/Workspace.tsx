@@ -70,13 +70,20 @@ function AppHost({ app }: { app: AppContent }) {
     case "messages":
       return <MessagesApp appId={app.id} title={app.label} threads={app.threads} />;
     case "mail":
-      return <MailApp title={app.label} accountAddress={app.accountAddress} messages={app.messages} />;
+      return (
+        <MailApp
+          appId={app.id}
+          title={app.label}
+          accountAddress={app.accountAddress}
+          messages={app.messages}
+        />
+      );
     case "browser":
       return (
         <BrowserApp appId={app.id} homePageId={app.homePageId} bookmarks={app.bookmarks} pages={app.pages} />
       );
     case "wallet":
-      return <WalletApp brand={app.brand} owner={app.owner} tabs={app.tabs} />;
+      return <WalletApp appId={app.id} brand={app.brand} owner={app.owner} tabs={app.tabs} />;
     case "marketplace":
       return <MarketplaceApp app={app} />;
     case "seller_hub":

@@ -1,11 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getModule, MODULES } from "@/content/modules";
+import { getModule, MODULES, type ModuleKey } from "@/content/modules";
 import { FINANCIAL_GOALS, labelFor } from "@/content/profileOptions";
 import type { ProgressSnapshot } from "@/lib/domain/progress";
 import type { Profile } from "@/lib/profile/schema";
+import { getCurrentUser } from "@/lib/auth/session";
+import { listDiscussableAttempts } from "@/lib/kenshi/server";
 import { getCurrentProgress } from "@/lib/progress/current";
+import { getCurrentRewards } from "@/lib/rewards/current";
+import { earnedBadges, type ShelfBadge } from "@/lib/rewards/earned";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { KenshiLauncher } from "@/components/kenshi/KenshiLauncher";
 import { ProfileUnavailable } from "@/components/profile/ProfileUnavailable";
+import { BadgeShelf } from "@/components/rewards/BadgeShelf";
 import { ModuleCard } from "@/components/dashboard/ModuleCard";
 import { ProgressUnavailable } from "@/components/dashboard/ProgressUnavailable";
 import { StatusLabel } from "@/components/dashboard/StatusLabel";
@@ -27,12 +34,6 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 export const metadata: Metadata = { title: "Dashboard" };
 
 const QUICK_LINKS: { href: string; label: string; body: string; icon: IconName }[] = [
-  {
-    href: "/sensei",
-    label: "Ask Sensei Kenshi",
-    body: "Questions about scams, finished scenarios, or PayPal.",
-    icon: "chat",
-  },
   {
     href: "/playbook",
     label: "Your Recovery Playbook",
@@ -57,6 +58,10 @@ export default async function DashboardPage() {
   }
 
   const { snapshot, profile } = result;
+  // Completed attempts Sensei Kenshi may discuss (titles + ids only; unfinished attempts never appear).
+  const user = await getCurrentUser();
+  const discussable = user ? await listDiscussableAttempts(await createSupabaseServerClient(), user.id) : [];
+  const earned = earnedBadges(await getCurrentRewards(), snapshot);
   const { progression } = snapshot;
   const current = progression.modules.find((m) => m.module.key === progression.currentModuleKey) ?? null;
 
@@ -86,6 +91,13 @@ export default async function DashboardPage() {
       />
 
       <StatsRow snapshot={snapshot} />
+
+      <KenshiLauncher
+        variant="card"
+        className="mt-6 lg:max-w-2xl"
+        discussable={discussable}
+        hasCompleted={discussable.length > 0}
+      />
 
       <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1fr)_21rem]">
         <div className="flex min-w-0 flex-col gap-10">
@@ -147,7 +159,7 @@ export default async function DashboardPage() {
             <TrainingFundsCard wallet={snapshot.currentWallet} className="hidden lg:block" />
           )}
           <GoalCard profile={profile} />
-          <BadgesCard snapshot={snapshot} />
+          <BadgesCard earned={earned} />
           <CertificatesCard snapshot={snapshot} />
           <nav aria-label="Learning tools" className="flex flex-col gap-3">
             {QUICK_LINKS.map((q) => (
@@ -313,29 +325,14 @@ function GoalCard({ profile }: { profile: Profile }) {
   );
 }
 
-function BadgesCard({ snapshot }: { snapshot: ProgressSnapshot }) {
+function BadgesCard({ earned }: { earned: Partial<Record<ModuleKey, ShelfBadge>> }) {
   return (
     <Card as="section" aria-labelledby="badges-heading">
       <h2 id="badges-heading" className="font-heading text-lg font-extrabold">
         Badges
       </h2>
       <p className="mt-1 text-small text-teal/85">Earn one for every module you finish.</p>
-      <ul className="mt-4 grid grid-cols-3 gap-3" aria-label="Module badges">
-        {MODULES.map((m) => {
-          const earned = Boolean(snapshot.modules[m.key].badgeEarnedAt);
-          return (
-            <li key={m.key} className="flex flex-col items-center gap-1.5 text-center">
-              <IconTile
-                name={earned ? "award" : "lock"}
-                tone={earned ? "white" : "mist"}
-                accent={false}
-                label={`${m.badgeName} badge (${m.title}): ${earned ? "earned" : "not earned yet"}`}
-              />
-              <span className="text-caption font-medium">{m.badgeName}</span>
-            </li>
-          );
-        })}
-      </ul>
+      <BadgeShelf earned={earned} size="sm" showDetails={false} className="mt-4" />
     </Card>
   );
 }

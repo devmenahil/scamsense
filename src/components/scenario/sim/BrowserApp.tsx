@@ -6,7 +6,7 @@ import { isAvailable } from "@/lib/domain/scenarioStateMachine";
 import { Icon } from "@/components/icons/Icon";
 import { BrowserFrame } from "./BrowserFrame";
 import { SiteBlocks } from "./SiteBlocks";
-import { useSim } from "./SimContext";
+import { useReveal, useSim } from "./SimContext";
 
 /**
  * Environment B (fictional web browser): history with back/forward, a bookmarks bar, an inspectable address bar, and
@@ -42,6 +42,11 @@ export function BrowserApp({
     if (navRequest?.appId === appId && navRequest.pageId) navigate(navRequest.pageId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navRequest?.nonce]);
+
+  // Review (read-only): show the page that holds a piece of evidence.
+  useReveal(appId, (t) => {
+    if (t.kind === "page" && t.pageId !== pageId) navigate(t.pageId);
+  });
 
   // Visiting a page can count as an action (e.g. opening the official site from a bookmark).
   useEffect(() => {

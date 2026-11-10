@@ -7,7 +7,7 @@ import { Icon } from "@/components/icons/Icon";
 import { BrowserFrame } from "./BrowserFrame";
 import { ChatThread } from "./ChatThread";
 import { ProductArt } from "./ProductArt";
-import { anchor, useAvailableDecisions, useSim } from "./SimContext";
+import { anchor, useAvailableDecisions, useCanNavigate, useReveal, useSim } from "./SimContext";
 import { DecisionButton, KvList, SimButton } from "./primitives";
 
 type Page =
@@ -38,6 +38,22 @@ export function MarketplaceApp({ app }: { app: MarketplaceAppContent }) {
     setHistory((h) => [...h.slice(0, index + 1), p]);
     setIndex((i) => i + 1);
   }
+
+  // Review (read-only): open the page that holds a piece of evidence (ProductPage picks its own tab).
+  useReveal(app.id, (t) => {
+    if (t.kind !== "market") return;
+    const next: Page =
+      t.page === "product" && t.id
+        ? { kind: "product", id: t.id }
+        : t.page === "seller" && t.id
+          ? { kind: "seller", id: t.id }
+          : t.page === "chat" && t.threadId
+            ? { kind: "chat", threadId: t.threadId }
+            : t.page === "checkout"
+              ? { kind: "checkout" }
+              : { kind: "home" };
+    if (JSON.stringify(next) !== JSON.stringify(page)) go(next);
+  });
 
   useEffect(() => {
     if (page.kind === "product") record(app.products.find((p) => p.id === page.id)?.openActionId);
@@ -190,8 +206,14 @@ function ProductPage({
   onMessage: (threadId: string) => void;
   onBuy: () => void;
 }) {
-  const { record, interactive } = useSim();
+  const { record, reveal } = useSim();
+  const canNavigate = useCanNavigate();
   const [tab, setTab] = useState<"description" | "specs" | "reviews">("description");
+  useEffect(() => {
+    const t = reveal?.target;
+    if (t?.kind === "market" && t.page === "product" && t.id === p.id) setTab(t.productTab ?? "description");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal?.nonce]);
   const seller = app.sellers.find((s) => s.id === p.sellerId)!;
   const [report] = useAvailableDecisions(p.reportDecisionId ? [p.reportDecisionId] : []);
   const tabs = [
@@ -246,7 +268,7 @@ function ProductPage({
           </div>
           {p.buyable ? (
             <div className="mt-4 flex flex-wrap gap-2">
-              <SimButton variant="solid" icon="marketplace" onClick={onBuy} disabled={!interactive}>
+              <SimButton variant="solid" icon="marketplace" onClick={onBuy} disabled={!canNavigate}>
                 Buy now
               </SimButton>
             </div>

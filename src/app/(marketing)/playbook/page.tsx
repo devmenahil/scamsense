@@ -1,83 +1,82 @@
 import type { Metadata } from "next";
-import { Icon, type IconName } from "@/components/icons/Icon";
-import { Badge } from "@/components/ui/Badge";
-import { Card } from "@/components/ui/Card";
+import { DISTINCTIONS } from "@/content/playbook/distinctions";
+import { POLICY_KB_VERSION, POLICY_RECORDS, POLICY_TOPICS, TOPIC_LABELS } from "@/content/playbook/policies";
+import { policyView } from "@/lib/recovery/playbook";
+import { PolicyCard } from "@/components/playbook/PolicyCard";
+import { Icon } from "@/components/icons/Icon";
 import { FeedbackBanner } from "@/components/ui/FeedbackBanner";
-import { IconTile } from "@/components/ui/IconTile";
 import { PageHeader } from "@/components/ui/PageHeader";
 
 export const metadata: Metadata = { title: "Your Recovery Playbook" };
 
 /**
- * Recovery Playbook shell (R21, R30). Only section TOPICS are listed (PRODUCT_SPEC §6). No policy statements,
- * timelines, statistics, or guarantees appear until each section is transcribed from official U.S. PayPal sources
- * with a source URL and a "last verified" date (Phase 10).
+ * Public Recovery Playbook (R21, R30): the versioned U.S. PayPal knowledge base (src/content/playbook), grouped by
+ * topic. Verified pages show their transcribed facts with the verification date; pages ScamSense couldn't verify
+ * show only their official link. No scenario-specific content (that is shown per completed attempt).
  */
-const SECTIONS: { id: string; title: string; summary: string; icon: IconName }[] = [
-  {
-    id: "unauthorized-activity",
-    title: "Report unauthorized activity",
-    summary: "What to do first if you notice a payment or login you don't recognise.",
-    icon: "report",
-  },
-  {
-    id: "disputes",
-    title: "Disputes and the Resolution Center",
-    summary: "How to raise a problem with a purchase or a payment.",
-    icon: "chat",
-  },
-  {
-    id: "protection",
-    title: "Purchase Protection and Seller Protection",
-    summary: "What these programs do and don't cover.",
-    icon: "shield",
-  },
-  {
-    id: "secure-account",
-    title: "Secure your account",
-    summary: "Steps to lock things down after a scare.",
-    icon: "lock",
-  },
-  {
-    id: "report-further",
-    title: "Law enforcement and federal reporting",
-    summary: "When and where to report a scam beyond PayPal.",
-    icon: "flag",
-  },
-];
-
 export default function PlaybookPage() {
+  const general = (
+    [
+      "report_message_vs_transaction",
+      "authorized_vs_unauthorized",
+      "protection_not_guarantee",
+      "seller_payment_proof",
+      "educational_not_case",
+    ] as const
+  ).map((id) => ({ id, ...DISTINCTIONS[id] }));
   return (
     <div className="container-page py-10 sm:py-14">
       <PageHeader
         eyebrow="Your Recovery Playbook"
         title="If something goes wrong, here's your plan"
-        description="Calm, practical steps for U.S. PayPal users who think they've been scammed. Every statement will link to its official PayPal source and show when it was last checked."
+        description="Calm, practical pointers for U.S. PayPal users, linked to PayPal's own pages. Each source shows when ScamSense last verified it."
       />
 
-      <FeedbackBanner tone="info" title="Content is being verified." className="mt-6">
-        Each section is filled in only after it is checked against official U.S. PayPal sources. Until then,
-        if you need help right now, contact PayPal through the official app or the website you normally type
-        in yourself.
+      <p className="mt-5 inline-flex items-center gap-2 rounded-pill bg-mist px-3 py-1.5 text-caption font-semibold">
+        <Icon name="info" className="size-4" />
+        Based on U.S. PayPal policies. Eligibility and terms apply.
+      </p>
+
+      <FeedbackBanner tone="info" title="Need help with a real problem?" className="mt-5">
+        Contact PayPal through its official app or a website address you type in yourself. ScamSense is an
+        educational simulator: it can&apos;t file reports or disputes for you and never promises a refund.
       </FeedbackBanner>
 
-      <ul className="mt-8 grid gap-5 md:grid-cols-2">
-        {SECTIONS.map((s) => (
-          <Card as="li" key={s.id} id={s.id} className="flex flex-col">
-            <div className="flex items-start justify-between gap-3">
-              <IconTile name={s.icon} accent={false} />
-              <Badge tone="mist" icon={<Icon name="clock" className="size-3.5" />}>
-                Pending verification
-              </Badge>
+      {POLICY_TOPICS.map((topic) => {
+        const records = POLICY_RECORDS.filter((r) => r.topic === topic);
+        if (records.length === 0) return null;
+        return (
+          <section key={topic} id={topic} className="mt-10" aria-labelledby={`topic-${topic}`}>
+            <h2 id={`topic-${topic}`} className="text-subheading font-bold">
+              {TOPIC_LABELS[topic]}
+            </h2>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              {records.map((r) => (
+                <PolicyCard key={r.policyId} p={policyView(r)} />
+              ))}
             </div>
-            <h2 className="mt-4 text-subheading font-bold">{s.title}</h2>
-            <p className="mt-1 text-teal/90">{s.summary}</p>
-            <p className="mt-4 border-t-2 border-mist pt-3 text-caption text-teal/85">
-              Source and last-verified date will appear here.
-            </p>
-          </Card>
-        ))}
-      </ul>
+          </section>
+        );
+      })}
+
+      <section className="mt-10" aria-labelledby="good-to-know">
+        <h2 id="good-to-know" className="text-subheading font-bold">
+          Good to know
+        </h2>
+        <div className="mt-4 flex flex-col gap-2">
+          {general.map((l) => (
+            <details key={l.id} className="group rounded-card border-2 border-teal/25 p-4">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-heading font-extrabold">
+                {l.title}
+                <Icon name="arrow-right" className="size-4 shrink-0 rotate-90 group-open:-rotate-90" />
+              </summary>
+              <p className="mt-2 text-small">{l.text}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <p className="mt-8 text-caption text-teal/85">Knowledge base version {POLICY_KB_VERSION}.</p>
     </div>
   );
 }

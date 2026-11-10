@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useEffect, type ReactNode } from "react";
 import type { DecisionContent } from "@/content/scenarios/schema";
+import type { RevealTarget } from "@/lib/review/locate";
 import { isAvailable } from "@/lib/domain/scenarioStateMachine";
 
 /**
@@ -22,6 +23,28 @@ export interface SimApi {
   openApp: (appId: string, pageId?: string) => void;
   /** A request for an app to show a page (set by `openApp`). `nonce` changes on every request. */
   navRequest: { appId: string; pageId?: string; nonce: number } | null;
+  /**
+   * Post-scenario review (Reveal the Red Flags, Step 9): the environment is read-only. `record` and `decide` do
+   * nothing, decisions stay disabled, but in-simulation NAVIGATION (links, "Buy now" to view the checkout) works.
+   */
+  readOnly?: boolean;
+  /** Review only: show the place where a piece of evidence lives (a thread, email, page, tab, or order). */
+  reveal?: { appId: string; target: RevealTarget; nonce: number } | null;
+}
+
+/** Whether navigation-only controls may be used (during play, or in the read-only review). */
+export function useCanNavigate(): boolean {
+  const { interactive, readOnly } = useSim();
+  return interactive || !!readOnly;
+}
+
+/** Runs `fn` when a review reveal request addresses this app (also on mount, for apps opened by the reveal). */
+export function useReveal(appId: string, fn: (target: RevealTarget) => void) {
+  const { reveal } = useSim();
+  useEffect(() => {
+    if (reveal && reveal.appId === appId) fn(reveal.target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal?.nonce]);
 }
 
 const Ctx = createContext<SimApi | null>(null);

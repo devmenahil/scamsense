@@ -77,6 +77,10 @@ export const CATEGORY_DEADLINE_MS: Record<GeminiCategory, number> = {
   classification: 12_000,
   personalization: 20_000,
   evaluation: 35_000,
+  // Step 9: one short Recovery Playbook note per completed attempt; the page never waits on it.
+  recovery: 15_000,
+  // Step 10: one Sensei Kenshi reply per learner question (the chat panel shows a typing indicator meanwhile).
+  chat: 20_000,
 };
 export const MAX_RETRIES = 2;
 const BASE_BACKOFF_MS = 600;

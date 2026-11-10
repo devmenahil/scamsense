@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
-import { APP_NAV, isActive } from "@/lib/navigation";
+import { isActive, navItemsFor } from "@/lib/navigation";
 import { Icon } from "@/components/icons/Icon";
 
 /** Desktop (≥1024px) horizontal navigation inside the app header. */
@@ -12,7 +12,7 @@ export function DesktopNav() {
   return (
     <nav aria-label="Main" className="hidden lg:block">
       <ul className="flex items-center gap-1">
-        {APP_NAV.map((item) => {
+        {navItemsFor(pathname).map((item) => {
           const active = isActive(pathname, item.href);
           return (
             <li key={item.href}>
@@ -49,8 +49,11 @@ export function MobileBottomNav() {
       aria-label="Main"
       className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-teal bg-white pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
-      <ul className="mx-auto grid max-w-xl grid-cols-5">
-        {APP_NAV.map((item) => {
+      <ul
+        className="mx-auto grid max-w-xl"
+        style={{ gridTemplateColumns: `repeat(${navItemsFor(pathname).length}, minmax(0, 1fr))` }}
+      >
+        {navItemsFor(pathname).map((item) => {
           const active = isActive(pathname, item.href);
           return (
             <li key={item.href}>

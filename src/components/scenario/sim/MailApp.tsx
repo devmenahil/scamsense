@@ -8,7 +8,7 @@ import { Icon } from "@/components/icons/Icon";
 import { Modal } from "@/components/ui/Modal";
 import { Attachment } from "./Attachments";
 import { InvoiceView } from "./InvoiceView";
-import { anchor, useAvailableDecisions, useSim } from "./SimContext";
+import { anchor, useAvailableDecisions, useCanNavigate, useReveal, useSim } from "./SimContext";
 import { Avatar, BackButton, DecisionButton, KvList, SimButton } from "./primitives";
 
 type DocumentAttachment = Extract<AttachmentContent, { kind: "document" }>;
@@ -18,15 +18,17 @@ type DocumentAttachment = Extract<AttachmentContent, { kind: "document" }>;
  * real mail client), attachments that open in a document viewer, and toolbar decisions. Nothing is highlighted (R10).
  */
 export function MailApp({
+  appId,
   title,
   accountAddress,
   messages,
 }: {
+  appId: string;
   title: string;
   accountAddress: string;
   messages: MailMessageContent[];
 }) {
-  const { recorded, record, interactive } = useSim();
+  const { recorded, record, interactive, readOnly } = useSim();
   const visible = messages.filter((m) => isAvailable(m.requires, recorded));
   const [openId, setOpenId] = useState<string | null>(null);
   const [read, setRead] = useState<Set<string>>(new Set());
@@ -35,8 +37,19 @@ export function MailApp({
 
   // A decision made inside the document viewer closes it, so the confirmation is the only open dialog.
   useEffect(() => {
-    if (!interactive) setDoc(null);
-  }, [interactive]);
+    if (!interactive && !readOnly) setDoc(null);
+  }, [interactive, readOnly]);
+
+  // Review (read-only): open the email (and its document) that holds a piece of evidence.
+  useReveal(appId, (t) => {
+    if (t.kind !== "mail") return;
+    const m = messages.find((x) => x.id === t.messageId);
+    if (!m) return;
+    setOpenId(m.id);
+    setRead((s) => new Set(s).add(m.id));
+    const a = t.documentIndex === undefined ? undefined : m.attachments[t.documentIndex];
+    if (a?.kind === "document") setDoc(a);
+  });
 
   function openMessage(m: MailMessageContent) {
     setOpenId(m.id);
@@ -86,7 +99,14 @@ export function MailApp({
 
       <section aria-label="Message" className={cn("min-w-0 md:block", open ? "block" : "hidden")}>
         {open ? (
-          <MailMessage key={open.id} message={open} onBack={() => setOpenId(null)} onOpenDocument={setDoc} />
+          <MailMessage
+            key={open.id}
+            message={open}
+            onBack={() => setOpenId(null)}
+            onOpenDocument={(d) => setDoc((cur) => (readOnly && cur === d ? null : d))}
+            // In the review the document opens inline, so evidence markers can sit on it.
+            inlineDocument={readOnly && doc && open.attachments.includes(doc) ? doc : null}
+          />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-teal/85">
             <Icon name="mail" className="size-8" />
@@ -95,7 +115,12 @@ export function MailApp({
         )}
       </section>
 
-      <Modal open={doc !== null} onClose={() => setDoc(null)} title={doc?.name ?? "Document"} size="lg">
+      <Modal
+        open={!readOnly && doc !== null}
+        onClose={() => setDoc(null)}
+        title={doc?.name ?? "Document"}
+        size="lg"
+      >
         {doc && <InvoiceView invoice={doc.invoice} />}
       </Modal>
     </div>
@@ -106,12 +131,15 @@ function MailMessage({
   message: m,
   onBack,
   onOpenDocument,
+  inlineDocument,
 }: {
   message: MailMessageContent;
   onBack: () => void;
   onOpenDocument: (d: DocumentAttachment) => void;
+  inlineDocument: DocumentAttachment | null;
 }) {
-  const { record, openApp, interactive } = useSim();
+  const { record, openApp } = useSim();
+  const canNavigate = useCanNavigate();
   const [details, setDetails] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const decisions = useAvailableDecisions(m.decisionIds);
@@ -199,7 +227,7 @@ function MailMessage({
                   <p key={i}>
                     <button
                       type="button"
-                      disabled={!interactive}
+                      disabled={!canNavigate}
                       onMouseEnter={() => setStatus(b.url)}
                       onMouseLeave={() => setStatus(null)}
                       onFocus={() => setStatus(b.url)}
@@ -233,6 +261,14 @@ function MailMessage({
                 <Attachment key={i} attachment={a} onOpenDocument={onOpenDocument} />
               ))}
             </div>
+            {inlineDocument && (
+              <section
+                aria-label={inlineDocument.name}
+                className="mt-4 overflow-x-auto rounded-tile border-2 border-teal/25 p-2 sm:p-4"
+              >
+                <InvoiceView invoice={inlineDocument.invoice} />
+              </section>
+            )}
           </div>
         )}
       </article>
