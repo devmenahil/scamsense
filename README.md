@@ -62,12 +62,14 @@ ScamSense is deployed on Render and can be accessed directly through a web brows
 
 ### Step 1 — Create Your Account
 
+> **Note:** Password recovery is not yet functional. Your progress is linked to your ScamSense account, so it is advisable to save your login credentials somewhere securely. 
+
 1. Open [ScamSense](https://scamsense-3f74.onrender.com).
-2. Select **Sign Up**.
-3. Register using an email address you can access.
-4. Confirm that you are at least 18 years old.
-5. Verify your email address if prompted.
-6. Sign in and complete onboarding.
+2. Select **Sign In**.
+3. If you don't have an account, click **Create Account** on the Sign In page.
+4. Enter your email address and choose a password.
+5. Confirm that you are at least 18 years old.
+6. Sign in and complete the onboarding process.
 
 During onboarding, ScamSense collects relevant profile information to personalize your learning experience.
 
