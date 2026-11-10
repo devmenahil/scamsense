@@ -554,7 +554,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 
 # PayPal Sandbox
@@ -573,7 +573,7 @@ GEMINI_MAX_RPM=12
 ZAPIER_CERTIFICATE_WEBHOOK_URL=
 ```
 
-The application also supports `NEXT_PUBLIC_SUPABASE_ANON_KEY` in applicable Supabase configurations.
+The application also supports `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in applicable Supabase configurations.
 
 Variables beginning with `NEXT_PUBLIC_` are accessible to browser code and must never contain secret credentials.
 
