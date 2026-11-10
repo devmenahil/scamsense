@@ -137,6 +137,12 @@ to reported activities, never a probability of being scammed, and age is never a
    comfortable proceeding with this payment?", "What made you believe this request was suspicious?", "What convinced
    you that the payment had been received?"), 20–1,000 characters, reviews it, and submits. Decision and explanation
    are now locked. **Decision change (Step 6):** the explanation now comes **before** any payment.
+   **Split-screen reasoning (2026-11-10):** while writing, the scenario stays visible beside the form (desktop/tablet:
+   two independently scrolling columns; phones: "Your reasoning" / "Review scenario" tabs that keep the typed text).
+   It is the same personalized instance with exactly the content the learner had unlocked, labelled **read-only**:
+   apps, threads, emails, and pages can be opened and scrolled, but nothing is recorded, no decision or reply can be
+   made, and no evidence is marked. The server enforces this too: in `EXPLANATION_REQUIRED` only the explanation is
+   accepted (every other event → 409), and checkout can't start before it.
 6. **Pay (only for a pay decision, R12).** A genuine PayPal **Sandbox** checkout runs for the server-calculated
    amount: the official PayPal button (JavaScript SDK v6, Sandbox) opens PayPal's own window, the buyer approves with
    a Sandbox Personal account, and the server captures and verifies the payment before anything is recorded (Step 7).

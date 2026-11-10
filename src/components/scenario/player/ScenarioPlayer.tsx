@@ -16,6 +16,7 @@ import { Workspace } from "../sim/Workspace";
 import { CheckoutPanel } from "./CheckoutPanel";
 import { EvaluationPanel } from "./EvaluationPanel";
 import { clearDraft, ExplanationPanel } from "./ExplanationPanel";
+import { ReasoningWorkspace } from "./ReasoningWorkspace";
 
 type ClientEvent =
   | { type: "START" }
@@ -212,16 +213,20 @@ export function ScenarioPlayer({ initialView }: { initialView: ClientAttemptView
       )}
 
       {view.state === "EXPLANATION_REQUIRED" && chosen && (
-        <ExplanationPanel
-          attemptId={view.attemptId}
-          decision={chosen}
-          minChars={view.explanation.minChars}
-          maxChars={view.explanation.maxChars}
-          isPay={chosen.kind === "pay"}
-          submitting={busy}
-          error={explanationError}
-          onSubmit={(t) => void submitExplanation(t)}
-        />
+        // Split view: the scenario stays visible READ-ONLY beside the reasoning form (nothing there is recorded).
+        <ReasoningWorkspace view={view}>
+          <ExplanationPanel
+            attemptId={view.attemptId}
+            decision={chosen}
+            minChars={view.explanation.minChars}
+            maxChars={view.explanation.maxChars}
+            isPay={chosen.kind === "pay"}
+            submitting={busy}
+            error={explanationError}
+            onSubmit={(t) => void submitExplanation(t)}
+            layout="column"
+          />
+        </ReasoningWorkspace>
       )}
 
       {(view.state === "PAYMENT_PENDING" ||

@@ -5,6 +5,7 @@ import type { DecisionContent } from "@/content/scenarios/schema";
 import { Icon } from "@/components/icons/Icon";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { cn } from "@/lib/cn";
 import { Textarea } from "@/components/ui/Input";
 import { explanationPrompt } from "./prompts";
 
@@ -40,6 +41,7 @@ export function ExplanationPanel({
   submitting,
   error,
   onSubmit,
+  layout = "centered",
 }: {
   attemptId: string;
   decision: DecisionContent;
@@ -49,6 +51,8 @@ export function ExplanationPanel({
   submitting: boolean;
   error: string | null;
   onSubmit: (text: string) => void;
+  /** "column": fill the right column of the split reasoning view instead of a centred card. */
+  layout?: "centered" | "column";
 }) {
   const [text, setText] = useState("");
   const [step, setStep] = useState<"write" | "review">("write");
@@ -80,7 +84,7 @@ export function ExplanationPanel({
   }
 
   return (
-    <Card padding="lg" className="mx-auto max-w-2xl">
+    <Card padding="lg" className={cn(layout === "centered" && "mx-auto max-w-2xl")}>
       <p className="label-eyebrow text-teal/80">Your final decision</p>
       <p className="mt-2 flex items-start gap-2 font-heading text-lg font-extrabold">
         <Icon name="lock" className="mt-1 size-5 shrink-0" />
