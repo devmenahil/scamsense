@@ -75,6 +75,8 @@ During onboarding, ScamSense collects relevant profile information to personaliz
 
 ### Step 2 — Start Your Learning Journey
 
+> **Note:** Depending on your decisions, amounts may be deducted from your fictional Training Funds to simulate real-world spending or financial losses from scams. No real money is involved.
+
 1. Open **Module 1 — Spot the Trap** from your dashboard.
 2. Select an available scenario.
 3. Explore the simulated messages, websites, or financial interactions.
