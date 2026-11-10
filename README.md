@@ -86,7 +86,7 @@ During onboarding, ScamSense collects relevant profile information to personaliz
 
 Complete both scenarios in a module to unlock the next module.
 
-> **Important:** ScamSense intentionally provides no red-flag highlights or answer hints during gameplay. You must make your own decisions before receiving feedback.
+> **Important:** To simulate real-world financial interactions, ScamSense does not highlight red flags or provide hints during gameplay. Feedback is revealed only after you make your final decision.
 
 ### Step 3 — PayPal Sandbox Checkout
 
