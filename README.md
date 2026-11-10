@@ -142,7 +142,7 @@ For additional information, consult the [PayPal Developer Documentation](https:/
 
 ### Step 4 — Receive Your Certificate by Email
 
-After completing both original scenarios in a module, you unlock its badge and completion certificate.
+> **Note:** Certificate emails use a 14-day Zapier trial and may stop working after it expires. Certificate previews and reports remain available.
 
 To receive your certificate:
 
