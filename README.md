@@ -5,11 +5,11 @@
 
 **Pause. Check. Verify. Then Pay.**
 
-[**Try ScamSense Live**](https://scamsense-3f74.onrender.com) · [Product Specification](docs/PRODUCT_SPEC.md) · [System Architecture](docs/ARCHITECTURE.md)
+[**🚀 Try ScamSense Live**](https://scamsense-3f74.onrender.com) · [Product Specification](docs/PRODUCT_SPEC.md) · [System Architecture](docs/ARCHITECTURE.md)
 
-ScamSense is an **AI-powered financial scam education platform** that transforms traditional scam awareness into immersive, personalized learning experiences.
+ScamSense is an **AI-powered financial scam education platform** that transforms traditional scam awareness into immersive, personalized simulations.
 
-Instead of answering multiple-choice questions, learners investigate realistic financial situations, make decisions, explain their reasoning, and experience the consequences in a safe environment.
+Instead of answering multiple-choice questions, users investigate realistic financial situations, make decisions, explain their reasoning, and experience the consequences in a safe environment.
 
 Built for the **PayPal AI Hackathon**, ScamSense combines **Google Gemini**, **PayPal Sandbox**, and a **Recovery Playbook grounded in verified official PayPal policies** to help users recognize scams, make informed payment decisions, and understand what to do when something goes wrong.
 
@@ -17,144 +17,13 @@ Built for the **PayPal AI Hackathon**, ScamSense combines **Google Gemini**, **P
 
 ---
 
-## Try ScamSense — No Installation Required
-
-**Live application:** https://scamsense-3f74.onrender.com
-
-ScamSense is publicly accessible through Render. You do not need to install software, clone the repository, configure API keys, or run the project locally.
-
-### Step 1 — Create Your ScamSense Account
-
-1. Visit [ScamSense](https://scamsense-3f74.onrender.com).
-2. Select **Sign Up**.
-3. Register using an accessible email address.
-4. Confirm that you are at least 18 years old.
-5. Verify your email address if prompted.
-6. Sign in and complete the onboarding process.
-
-During onboarding, ScamSense collects information about your occupation, financial activities, and goals to personalize your learning experience.
-
-### Step 2 — Start Your Learning Journey
-
-From the dashboard:
-
-1. Open **Module 1 — Spot the Trap**.
-2. Select an available scenario.
-3. Explore the simulated messages, websites, or financial interactions.
-4. Investigate the available information.
-5. Make your final decision.
-6. Explain why you chose that action.
-7. Review your AI-generated feedback.
-8. Explore **Reveal the Red Flags** and **Your Recovery Playbook**.
-
-Complete both scenarios to unlock the next module.
-
-**Important:** ScamSense intentionally does not reveal red flags or correct answers during gameplay. You must make your own decisions before receiving feedback.
-
-### Step 3 — Set Up a PayPal Sandbox Buyer Account
-
-Some scenarios contain an authentic PayPal Sandbox checkout.
-
-To approve a payment, you need a **PayPal Sandbox Personal (buyer) account**.
-
-Your ScamSense login credentials cannot be used to log in to PayPal Sandbox.
-
-#### Create or Access Your Sandbox Account
-
-1. Visit [PayPal Developer](https://developer.paypal.com).
-2. Sign in with your PayPal Developer account, or create one if necessary.
-3. Open the [Sandbox Accounts dashboard](https://developer.paypal.com/dashboard/accounts).
-4. Check whether a **Personal** Sandbox account already exists.
-5. If one exists, you can use it. Otherwise, create a new Sandbox account with:
-   - **Account type:** Personal (Buyer).
-   - **Country/Region:** United States (recommended for the English-language demo).
-6. Open the account's **View/Edit Account** option.
-7. Locate the Sandbox account's test email and password.
-
-These credentials are specifically for the PayPal testing environment.
-
-**Do not use real payment credentials or your actual PayPal account to complete ScamSense Sandbox checkout.**
-
-#### Complete a Sandbox Payment
-
-When you encounter a payment-enabled scenario:
-
-1. Investigate the scenario and decide whether to proceed with the payment.
-2. Confirm your decision and submit your written reasoning.
-3. Select **Pay with PayPal** when checkout is available.
-4. The official PayPal Sandbox checkout window will open.
-5. Sign in using your **Sandbox Personal buyer account email and password**.
-6. Review the fictional payment.
-7. Approve the payment if you want to complete that simulated transaction.
-8. Return to ScamSense to view your results.
-
-PayPal processes the transaction within its Sandbox environment.
-
-**No real money will be charged.**
-
-You may also encounter scenarios where the safer decision is to avoid payment altogether.
-
-#### Important Notes for Testers
-
-- You need a ScamSense account to access the learning platform.
-- You need a PayPal Sandbox Personal account only when approving Sandbox payments.
-- The two accounts are completely separate.
-- A Sandbox Business account is not the appropriate account for signing in as the buyer.
-- If PayPal automatically signs you into a different Sandbox account, try a private/incognito browser window.
-- PayPal's hosted checkout language may depend on the Sandbox account's country and language preferences.
-
-For more information, refer to [PayPal Developer Documentation](https://developer.paypal.com/docs/).
-
-### Step 4 — Receive Your Certificate by Email
-
-Completing both original scenarios in a module unlocks its completion badge and certificate.
-
-To receive your certificate:
-
-1. Complete both scenarios in the module.
-2. Open the module's completion or certificate section.
-3. Preview your certificate.
-4. Select the option to receive the certificate by email.
-5. Enter a **valid email address that you can access**.
-6. Submit the email request.
-7. Check your inbox for the certificate email and its PDF attachment.
-
-**If you do not receive the email, check your Spam or Junk folder.**
-
-Certificate emails are delivered through the existing **Zapier and Gmail integration**.
-
-The certificate is an educational achievement issued by ScamSense. It is not an official PayPal certification.
-
-### Step 5 — Download Your Learning Report
-
-After completing a module, you can download a PDF analysis report containing your recorded learning results.
-
-The report includes information about your decisions, reasoning, evidence recognition, scores, and simulated financial outcomes.
-
-Unlike certificates, **analysis reports are downloaded directly from ScamSense**.
-
-### Account Requirements at a Glance
-
-| Activity | Account Required |
-|---|---|
-| Access ScamSense | ScamSense account |
-| Complete onboarding and scenarios | ScamSense account |
-| Receive Gemini feedback | ScamSense account |
-| Approve Sandbox payments | PayPal Sandbox Personal account |
-| Receive certificate PDF by email | Valid, accessible email address |
-| Download analysis report | Completed module on your ScamSense account |
-
----
-
 ## The Problem
 
-Financial scams are increasingly convincing.
-
-Fraudulent invoices, phishing emails, fake payment confirmations, and impersonation attempts can resemble legitimate financial interactions.
+Financial scams are increasingly convincing. Fraudulent invoices, phishing emails, fake payment confirmations, and impersonation attempts can closely resemble legitimate financial interactions.
 
 Traditional awareness resources explain warning signs, but recognizing a scam in an article is different from making a financial decision under pressure.
 
-Users need opportunities to practice identifying suspicious behavior, verifying information, and making informed decisions without risking actual money.
+People need opportunities to practice identifying suspicious behavior, verifying information, and making informed decisions **without risking actual money**.
 
 **ScamSense turns scam awareness from passive information into active experience.**
 
@@ -162,98 +31,221 @@ Users need opportunities to practice identifying suspicious behavior, verifying 
 
 ## Our Solution
 
-ScamSense provides a safe environment where users learn by doing.
+ScamSense provides a personalized learning environment where users can:
 
-A learner can:
-
-1. Enter realistic scenarios personalized to their profile.
+1. Enter realistic scenarios tailored to their occupations, financial activities, and goals.
 2. Investigate messages, websites, invoices, and marketplace interactions.
-3. Make meaningful financial decisions.
-4. Explain the evidence behind those decisions.
-5. Receive personalized feedback powered by Google Gemini.
-6. Revisit the scenario to identify important clues.
+3. Make meaningful financial decisions, including PayPal Sandbox payments where applicable.
+4. Explain the evidence behind their decisions.
+5. Receive personalized reasoning feedback powered by Google Gemini.
+6. Revisit completed scenarios to discover important evidence.
 7. Learn relevant protection and recovery procedures grounded in official PayPal policies.
-8. Earn badges, certificates, and downloadable analysis reports.
+8. Track progress, earn badges, receive certificates, and download analysis reports.
 
 **Not every scenario is fraudulent.**
 
-ScamSense also includes legitimate financial interactions, encouraging learners to distinguish genuine opportunities from suspicious situations rather than automatically rejecting every payment.
+ScamSense also includes legitimate financial interactions, encouraging learners to distinguish genuine opportunities from suspicious situations instead of automatically rejecting every payment.
 
-The goal is to develop **financial confidence through evidence-based decision-making**.
+Our objective is to develop **financial confidence through evidence-based decision-making**.
+
+---
+
+## Try ScamSense — No Installation Required
+
+**Live application: https://scamsense-3f74.onrender.com**
+
+ScamSense is deployed on Render and can be accessed directly through a web browser.
+
+**You do not need to clone the repository, configure API keys, or install anything to use the live application.**
+
+### Step 1 — Create Your Account
+
+1. Open [ScamSense](https://scamsense-3f74.onrender.com).
+2. Select **Sign Up**.
+3. Register using an email address you can access.
+4. Confirm that you are at least 18 years old.
+5. Verify your email address if prompted.
+6. Sign in and complete onboarding.
+
+During onboarding, ScamSense collects relevant profile information to personalize your learning experience.
+
+### Step 2 — Start Your Learning Journey
+
+1. Open **Module 1 — Spot the Trap** from your dashboard.
+2. Select an available scenario.
+3. Explore the simulated messages, websites, or financial interactions.
+4. Investigate the information presented.
+5. Make your final decision.
+6. Explain why you chose that action.
+7. Review your Gemini-powered feedback.
+8. Explore **Reveal the Red Flags** and **Your Recovery Playbook**.
+
+Complete both scenarios in a module to unlock the next module.
+
+> **Important:** ScamSense intentionally provides no red-flag highlights or answer hints during gameplay. You must make your own decisions before receiving feedback.
+
+### Step 3 — PayPal Sandbox Checkout
+
+Certain scenarios include authentic PayPal Sandbox checkout.
+
+**To approve a payment, you must use a PayPal Sandbox Personal (buyer) account.**
+
+Your ScamSense login credentials cannot be used to sign in to PayPal Sandbox.
+
+PayPal Sandbox transactions use simulated funds. No real money is transferred.
+
+<details>
+<summary><strong>How to create and use a PayPal Sandbox buyer account (click to expand)</strong></summary>
+
+### A. Create or Access Your Sandbox Account
+
+1. Visit [PayPal Developer](https://developer.paypal.com).
+2. Sign in with your PayPal Developer account, or register if you do not have one.
+3. Open [Sandbox Accounts](https://developer.paypal.com/dashboard/accounts).
+4. Check whether a **Personal** Sandbox account already exists.
+5. If an appropriate account exists, use it. Otherwise, create a new Sandbox account:
+   - **Account type:** Personal (Buyer)
+   - **Country/Region:** United States (recommended for an English-language demonstration)
+6. Open the account's **View/Edit Account** option.
+7. Locate the Sandbox test email address and password.
+
+These credentials belong to PayPal's testing environment and are separate from your ScamSense credentials.
+
+### B. Complete a Sandbox Payment in ScamSense
+
+When you encounter a payment-enabled scenario:
+
+1. Investigate the scenario and choose whether to proceed with payment.
+2. Confirm your decision and submit your written reasoning.
+3. Select **Pay with PayPal** when checkout becomes available.
+4. The official PayPal Sandbox checkout window will open.
+5. Sign in using your **Sandbox Personal buyer account** credentials.
+6. Review the simulated payment.
+7. Approve the transaction if you want to complete the payment.
+8. Return to ScamSense to view your results.
+
+### Important Notes
+
+- A ScamSense account is required to play scenarios.
+- A PayPal Sandbox Personal account is required only when approving Sandbox payments.
+- A Sandbox Business account is not the buyer account used to approve checkout.
+- Do not use your real PayPal payment credentials for Sandbox checkout.
+- If PayPal automatically signs you into another Sandbox account, try a private/incognito browser window.
+- Hosted checkout language may depend on the Sandbox buyer account and browser preferences.
+- Some scenarios involve no payment, and avoiding a suspicious payment may be the safer decision.
+
+For additional information, consult the [PayPal Developer Documentation](https://developer.paypal.com/docs/).
+
+</details>
+
+### Step 4 — Receive Your Certificate by Email
+
+After completing both original scenarios in a module, you unlock its badge and completion certificate.
+
+To receive your certificate:
+
+1. Open the completed module's certificate section.
+2. Preview your certificate.
+3. Select the option to receive it by email.
+4. Enter a **valid email address you can access**.
+5. Submit the request.
+6. Check your inbox for the certificate PDF attachment.
+
+**If the email does not arrive, check your Spam or Junk folder.**
+
+Certificate emails are delivered through the existing **Zapier and Gmail integration**.
+
+The certificate recognizes completion of a ScamSense educational module. It is not an official PayPal certification.
+
+### Step 5 — Download Your Analysis Report
+
+After completing a module, you can also download a PDF report containing your recorded learning results.
+
+The report includes your decisions, reasoning, evidence recognition, scores, and simulated financial outcomes.
+
+**Analysis reports are downloaded directly from ScamSense. Certificates are delivered by email.**
+
+### Account Requirements
+
+| Activity | What You Need |
+|---|---|
+| Access the platform | ScamSense account |
+| Complete scenarios | ScamSense account |
+| Receive AI feedback | ScamSense account |
+| Approve Sandbox payments | PayPal Sandbox Personal account |
+| Receive a certificate PDF | Valid, accessible email address |
+| Download an analysis report | Completed module |
 
 ---
 
 ## Key Features
 
-### 1. AI-Personalized Scam Simulations
+### 1. AI-Personalized Simulations
 
-ScamSense uses **Google Gemini** to personalize the narrative details of each scenario according to the learner's profile.
+ScamSense uses **Google Gemini** to personalize scenario narratives based on user profiles.
 
-Personalization considers relevant information such as:
+Personalization considers:
 
-- Occupation.
-- Financial activities.
-- Financial goals.
-- Custom profile descriptions.
+- Occupation
+- Financial activities
+- Financial goals
+- Meaningful custom profile descriptions
 
-For example, students, freelancers, and online shoppers may encounter different contextual details within the same underlying educational scenario.
+For example, a student, freelancer, and online shopper may encounter different contextual details within the same underlying scenario.
 
-The application uses a hybrid personalization architecture:
+Our hybrid approach combines:
 
-- Deterministic routing for predefined profile options.
-- Gemini-based classification for meaningful custom descriptions.
-- Gemini-generated scenario narrative details.
-- Persisted personalization for consistency across refreshes and replays.
+- **Deterministic routing** for predefined profile options.
+- **Gemini classification** for meaningful custom descriptions.
+- **Gemini-generated narrative personalization** across all six scenarios.
+- **Persistent personalization** for consistent refreshes and replays.
 
-**Gemini personalizes the experience but cannot change whether a scenario is fraudulent or legitimate.**
+**AI personalizes the experience but does not determine whether a scenario is fraudulent or legitimate.**
 
-Correct answers, required evidence, payment rules, and authoritative scenario outcomes remain controlled by the backend.
+Correct answers, mandatory evidence, financial rules, and scenario outcomes remain controlled by the application.
 
 ### 2. Immersive, Decision-Based Learning
 
-ScamSense presents financial situations through realistic fictional interfaces, including:
+Learners interact with fictional environments resembling:
 
-- Messaging conversations.
-- Emails and websites.
-- Payment invoices.
-- Online marketplaces.
-- Seller dashboards.
+- Messaging applications
+- Emails and websites
+- Payment invoices
+- Online marketplaces
+- Seller dashboards
 
-During gameplay, learners do not receive highlighted red flags or hints identifying the correct decision.
+There are no answer hints or highlighted warning signs during gameplay.
 
-They must investigate, decide, and explain their reasoning.
+Users must investigate, make their final decision, and explain their reasoning.
 
-After locking a decision, learners can review the original scenario in a **read-only reasoning workspace** while writing their explanation.
-
-The interface prevents additional gameplay decisions or payments during this stage.
+After locking a decision, learners can review the original scenario through a **read-only reasoning workspace** without changing their decision or triggering additional actions.
 
 ### 3. Authentic PayPal Sandbox Integration
 
-Payment-enabled scenarios use the official **PayPal JavaScript SDK v6** and **PayPal Orders v2 API**.
+ScamSense integrates:
 
-The application:
+- **PayPal JavaScript SDK v6** for hosted Sandbox checkout.
+- **PayPal Orders v2 API** for order creation and capture.
+- Server-side verification of payment status, amount, and currency.
+- A fictional Training Funds ledger for financial consequences.
 
-- Creates Sandbox orders using server-calculated amounts.
-- Opens PayPal's hosted approval interface.
-- Captures approved transactions.
-- Verifies the completed payment status, amount, and currency.
-- Records approved transactions in the fictional Training Funds ledger.
+Eligible scenarios allow users to approve simulated payments through PayPal's official Sandbox interface.
 
-This allows learners to practice realistic financial decisions without transferring actual money.
+The application verifies completed captures before recording financial outcomes.
 
-**Testers must use a PayPal Sandbox Personal buyer account to approve payments.** See [Step 3 — Set Up a PayPal Sandbox Buyer Account](#step-3--set-up-a-paypal-sandbox-buyer-account).
+**No real-money payment processing is enabled.**
 
 ### 4. Gemini-Powered Reasoning Evaluation
 
 Every final decision requires a written explanation.
 
-Gemini evaluates the learner's reasoning and produces personalized educational feedback covering:
+Gemini analyzes the learner's reasoning and provides personalized feedback covering:
 
-- Recognized evidence.
-- Overlooked evidence.
-- Unsupported assumptions.
-- Verification behavior.
-- Opportunities to improve.
+- Recognized evidence
+- Overlooked evidence
+- Unsupported assumptions
+- Verification behavior
+- Opportunities for improvement
 
 ScamSense uses a transparent scoring framework:
 
@@ -265,62 +257,60 @@ ScamSense uses a transparent scoring framework:
 | Payment safety | 10 |
 | **Total** | **100** |
 
-The backend calculates scores using application-defined rules. Gemini provides structured educational analysis.
+The backend calculates numerical scores using application-defined rules, while Gemini provides structured educational analysis and personalized feedback.
 
 ### 5. Reveal the Red Flags
 
-After completing a scenario, learners unlock an interactive review of the experience.
+Once a scenario is completed, learners can revisit the original experience with interactive evidence annotations.
 
-Evidence annotations explain:
+Evidence is categorized as:
 
 - **Red flags:** Indicators associated with fraudulent behavior.
 - **Worth verifying:** Information requiring further investigation.
 - **Positive verification evidence:** Indicators supporting a legitimate interaction.
 
-All evidence explanations are predefined and linked to the specific scenario.
+These explanations come from predefined scenario answer keys rather than independently generated AI answers.
 
-This ensures that the answer key is consistent rather than generated independently by AI.
+### 6. Recovery Playbook — Grounded in Official PayPal Policies
 
-### 6. Recovery Playbook — Powered by Verified PayPal Policies
-
-Recognizing a scam is only the beginning. Users also need to know what actions they can take if something goes wrong.
+Recognizing a scam is only the beginning. Users also need to understand what they can do if something goes wrong.
 
 ScamSense's **Recovery Playbook** provides scenario-specific educational guidance using a versioned knowledge base of verified official U.S. PayPal policies and help resources.
 
-Depending on the scenario, learners can explore:
+Depending on the scenario, users can learn about:
 
-- Reporting suspicious messages and phishing attempts.
-- Responding to potentially unauthorized transactions.
-- Understanding PayPal's Resolution Center.
+- Reporting phishing and suspicious messages.
+- Responding to potentially unauthorized activity.
+- Using PayPal's Resolution Center.
 - Disputing eligible transactions.
 - PayPal Purchase Protection.
 - PayPal Seller Protection.
-- Relevant limitations, eligibility conditions, exclusions, and reporting timeframes.
+- Applicable eligibility conditions, exclusions, and timeframes.
 
-Gemini can personalize educational explanations, but official policy records provide the authoritative information.
+Gemini may personalize educational explanations, but authoritative policy facts come from verified PayPal sources.
 
-**The Recovery Playbook does not guarantee refunds or replace PayPal's current official terms and support procedures.**
+**The Recovery Playbook does not guarantee refunds or replace current official PayPal terms and support procedures.**
 
 ### 7. Sensei Kenshi — AI Learning Companion
 
 **Sensei Kenshi** is ScamSense's Gemini-powered financial safety learning companion.
 
-Learners can ask Kenshi questions about:
+Learners can ask Kenshi about:
 
 - Completed scenarios.
 - Their decisions and reasoning.
 - Recognized and missed evidence.
-- Fraud techniques.
+- Common financial scam techniques.
 - Safer verification practices.
-- Relevant PayPal protection and recovery policies.
+- Relevant PayPal protection and recovery information.
 
-Kenshi can use the learner's completed scenario context to make its explanations more relevant.
+Kenshi uses the learner's completed scenario context to make its responses more relevant.
 
-It is not available during active gameplay and cannot reveal the correct answers or hidden evidence of unfinished scenarios.
+To preserve the learning experience, Kenshi cannot reveal hidden evidence or correct answers for unfinished scenarios.
 
 ### 8. Training Funds and Financial Consequences
 
-ScamSense uses fictional **Training Funds** to make financial choices meaningful.
+ScamSense gives learners fictional **Training Funds** to make financial decisions meaningful.
 
 The platform tracks:
 
@@ -328,15 +318,15 @@ The platform tracks:
 - Legitimate spending.
 - Fictional scam-related losses.
 - Remaining Training Funds.
-- Module-level financial history.
+- Module-level transaction history.
 
-Financial records are maintained through a controlled ledger.
+The backend maintains controlled financial records and prevents duplicate deductions.
 
-Replaying a scenario does not modify official scores, Training Funds, module progression, badges, or certificates.
+Practice replays are isolated from official scores, wallet balances, progression, badges, and certificates.
 
 ### 9. Badges, Certificates, and Reports
 
-Completing both original scenarios in a module awards a badge and certificate.
+Completing both original scenarios in a module unlocks its badge and certificate.
 
 | Module | Achievement Badge |
 |---|---|
@@ -346,13 +336,11 @@ Completing both original scenarios in a module awards a badge and certificate.
 
 Learners can:
 
-- View their achievements.
-- Preview certificates.
-- Receive certificate PDFs by email.
-- Download module analysis reports.
+- View earned achievements.
+- Preview module certificates.
+- Request certificate PDFs by email.
+- Download detailed module analysis reports.
 - Replay completed scenarios.
-
-**Certificate email delivery requires a valid, accessible email address. Check Spam/Junk if the message does not appear in the inbox.**
 
 ---
 
@@ -360,80 +348,57 @@ Learners can:
 
 ScamSense currently includes **three modules and six mandatory scenarios**.
 
-### Module 1 — Spot the Trap
+| Module | Scenario | Learning Focus |
+|---|---|---|
+| **1. Spot the Trap** | The Security Check | Recognizing attempts to obtain sensitive verification information |
+| | Your Account Needs Attention | Investigating phishing emails and suspicious websites |
+| **2. Trust Under Pressure** | An Invoice Has Arrived | Verifying unexpected payment requests |
+| | The Laptop Purchase | Recognizing legitimate transactions and informed purchasing decisions |
+| **3. Outsmart the Scam** | The Job Opportunity | Identifying advance-fee recruitment scams |
+| | The Seller's Dilemma | Verifying payment claims before shipping goods |
 
-**The Security Check**
-
-A fictional conversation tests the learner's ability to recognize attempts to obtain sensitive verification information.
-
-**Your Account Needs Attention**
-
-A convincing account-related email and website experience challenges the learner to investigate an apparent security alert.
-
-### Module 2 — Trust Under Pressure
-
-**An Invoice Has Arrived**
-
-An unexpected invoice tests whether the learner verifies the request before making a payment.
-
-**The Laptop Purchase**
-
-A legitimate marketplace purchase challenges the learner to recognize positive evidence and make an informed purchasing decision.
-
-### Module 3 — Outsmart the Scam
-
-**The Job Opportunity**
-
-A job-related advance-fee scenario tests the learner's response to a suspicious payment request.
-
-**The Seller's Dilemma**
-
-The learner takes the seller's perspective and must decide how to respond to a claimed payment before shipping an item.
-
-Together, the six scenarios explore different scam techniques and reinforce evidence-based financial decision-making.
+The inclusion of legitimate scenarios encourages learners to make evidence-based decisions rather than assuming every financial interaction is fraudulent.
 
 ---
 
 ## How ScamSense Works
 
 ```text
-Register and Complete Onboarding
-              |
-              v
-      Personalized Modules
-              |
-              v
-       Immersive Scenario
-              |
-              v
-    Investigate and Verify
-              |
-              v
-         Final Decision
-              |
-              v
-     Written Justification
-              |
-              v
-   PayPal Sandbox (if applicable)
-              |
-              v
-     Gemini-Powered Feedback
-              |
-              v
-      Reveal the Red Flags
-              |
-              v
-        Recovery Playbook
-              |
-              v
-          Sensei Kenshi
-              |
-              v
-   Badge + Certificate + Report
+Registration and Onboarding
+           |
+           v
+Personalized Module Experience
+           |
+           v
+Immersive Financial Scenario
+           |
+           v
+Investigation and Verification
+           |
+           v
+Final Decision + Written Reasoning
+           |
+           v
+PayPal Sandbox Checkout
+    (when applicable)
+           |
+           v
+Gemini Feedback + Backend Scoring
+           |
+           v
+Reveal the Red Flags
+           |
+           v
+Recovery Playbook
+           |
+           v
+Sensei Kenshi Learning Support
+           |
+           v
+Badge + Certificate + Analysis Report
 ```
 
-The platform combines adaptive AI experiences with deterministic backend rules to provide consistent, explainable educational outcomes.
+ScamSense combines adaptive AI personalization with deterministic backend rules to deliver consistent and explainable educational outcomes.
 
 ---
 
@@ -443,54 +408,40 @@ The platform combines adaptive AI experiences with deterministic backend rules t
 |---|---|
 | Next.js | Full-stack web application |
 | React | Interactive user interfaces |
-| TypeScript | Type-safe application development |
+| TypeScript | Type-safe development |
 | Tailwind CSS | Responsive styling |
-| Google Gemini API | Scenario personalization, reasoning evaluation, and Sensei Kenshi |
-| PayPal JavaScript SDK v6 | Sandbox checkout interface |
-| PayPal Orders v2 API | Payment order creation, capture, and verification |
-| Supabase Authentication | User accounts and authentication |
-| Supabase PostgreSQL | Profiles, attempts, progress, scores, and ledger |
+| Google Gemini API | Personalization, reasoning feedback, and Sensei Kenshi |
+| PayPal JavaScript SDK v6 | Hosted Sandbox checkout |
+| PayPal Orders v2 API | Order creation, capture, and verification |
+| Supabase Auth | Authentication and sessions |
+| Supabase PostgreSQL | Profiles, attempts, scores, progress, and financial ledger |
 | Supabase Storage | Private certificate PDF storage |
 | Zapier + Gmail | Certificate email delivery |
 | React PDF | Certificate and analysis report generation |
 | Vitest | Automated testing |
-| Render | Application deployment |
+| Render | Cloud deployment |
 
 ---
 
 ## System Architecture
 
-ScamSense separates immersive user experiences, AI-generated content, authoritative application logic, and external integrations.
+ScamSense separates user interactions, AI-generated content, authoritative application rules, and external integrations.
 
-### Frontend
+**Frontend:** Next.js and React render the dashboard, immersive scenarios, checkout interface, and learning results.
 
-Next.js and React deliver the learner dashboard, interactive scenarios, checkout interfaces, feedback screens, and educational resources.
+**Backend:** Next.js server-side endpoints manage authentication, gameplay transitions, scoring, payment verification, and reward eligibility.
 
-### Backend
+**Database:** Supabase PostgreSQL stores user profiles, attempts, event history, payment transactions, evaluations, and rewards.
 
-Next.js server-side endpoints manage authentication, game state transitions, scoring, payment verification, and certificate eligibility.
+**AI Layer:** Gemini personalizes narratives, evaluates written reasoning, and powers Sensei Kenshi.
 
-### Database
+**Payment Layer:** PayPal Sandbox processes simulated transactions through official checkout infrastructure.
 
-Supabase PostgreSQL stores profiles, progress, attempts, events, payment transactions, evaluations, and rewards.
+**Policy Knowledge Layer:** A versioned collection of official PayPal resources grounds the Recovery Playbook and policy-related educational assistance.
 
-### AI Layer
+**Certificate Delivery:** PDFs are generated server-side, stored privately in Supabase, and delivered through Zapier and Gmail.
 
-Google Gemini powers narrative personalization, reasoning analysis, Recovery Playbook personalization, and Sensei Kenshi.
-
-### Payment Layer
-
-PayPal Sandbox processes simulated payments through its official checkout infrastructure.
-
-### Policy Knowledge Layer
-
-A versioned knowledge base of official PayPal sources supports the Recovery Playbook and policy-related educational assistance.
-
-### Certificate Delivery
-
-Certificate PDFs are generated on the server, stored privately in Supabase, and delivered as email attachments through Zapier and Gmail.
-
-For further details, see:
+For detailed implementation information:
 
 - [Product Specification](docs/PRODUCT_SPEC.md)
 - [System Architecture](docs/ARCHITECTURE.md)
@@ -500,44 +451,79 @@ For further details, see:
 
 ## Security and Responsible AI
 
-ScamSense follows a key principle:
+ScamSense follows a core principle:
 
-**AI can personalize the learning experience, but it cannot override authoritative gameplay, scoring, or payment rules.**
+**AI can personalize learning but cannot override authoritative gameplay, scoring, or payment rules.**
 
-Safeguards include:
+Implemented safeguards include:
 
-- PayPal Sandbox-only payment processing.
+- PayPal Sandbox-only transactions.
 - Server-side payment amount calculation.
 - Server-side payment capture verification.
-- Idempotent financial transaction handling.
+- Idempotent transaction handling.
 - Supabase authentication and Row Level Security.
-- User-specific data access restrictions.
+- User-specific authorization checks.
 - Protected scenario answer keys.
-- Validation of Gemini-generated structured output.
-- Safe fallback content when AI services are unavailable.
-- Separation of original attempts and practice replays.
+- Validation of structured Gemini output.
+- Safe fallback behavior when Gemini is unavailable.
+- Original attempts isolated from practice replays.
 - Private certificate storage.
-- Temporary signed certificate access URLs.
-- Verified policy sources separated from AI-generated explanations.
+- Expiring signed certificate URLs.
+- Verified PayPal policy records separated from AI-generated explanations.
 
-ScamSense uses fictional educational scenarios and does not handle real-money transactions.
+All scenarios are fictional educational experiences.
+
+---
+
+## Testing and Quality Assurance
+
+ScamSense has undergone automated testing across its core systems.
+
+The final pre-deployment QA reported:
+
+| Check | Result |
+|---|---|
+| Unit tests | 461 passed across 40 files |
+| TypeScript | Passed |
+| ESLint | Passed |
+| Production build | Passed |
+| Integration tests | 82 passed |
+
+Automated testing covers:
+
+- Authentication and user authorization.
+- Scenario state transitions.
+- Module progression.
+- Scoring calculations.
+- Training Funds and financial ledger.
+- PayPal payment verification.
+- Duplicate transaction prevention.
+- Original and replay isolation.
+- Gemini output validation.
+- Evidence matching.
+- Policy retrieval.
+- Badges and certificates.
+- Report authorization.
+- Certificate email requests.
+
+**Automated testing does not replace manual verification of PayPal-hosted checkout, certificate email delivery, or responsive browser behavior.**
 
 ---
 
 ## Running Locally — Developers Only
 
-**You do not need to complete this section to use the live website.**
+**You do not need this section to use the live ScamSense website.**
 
-These instructions are for developers who want to clone, run, or contribute to the project.
+These instructions are for developers who want to run the application locally.
 
 ### Prerequisites
 
-- Node.js 24.
-- npm.
-- Supabase project.
-- Google Gemini API key.
-- PayPal Developer Sandbox credentials.
-- Optional Zapier webhook for certificate email delivery.
+- Node.js 24
+- npm
+- Supabase project
+- Google Gemini API key
+- PayPal Developer Sandbox application credentials
+- Optional Zapier Catch Hook for certificate delivery
 
 ### 1. Clone the Repository
 
@@ -554,13 +540,13 @@ npm ci
 
 ### 3. Configure Environment Variables
 
-Create a `.env.local` file using `.env.example` as the template.
+Create `.env.local` using `.env.example` as the reference.
 
 ```bash
 cp .env.example .env.local
 ```
 
-Configure the following values:
+Configure:
 
 ```dotenv
 # Application
@@ -577,35 +563,35 @@ PAYPAL_API_BASE=https://api-m.sandbox.paypal.com
 NEXT_PUBLIC_PAYPAL_CLIENT_ID=
 PAYPAL_CLIENT_SECRET=
 
-# Google Gemini
+# Gemini
 GEMINI_API_KEY=
 GEMINI_MODEL=
 GEMINI_TIMEOUT_MS=30000
 GEMINI_MAX_RPM=12
 
-# Optional certificate email integration
+# Optional certificate email
 ZAPIER_CERTIFICATE_WEBHOOK_URL=
 ```
 
-The application also supports `NEXT_PUBLIC_SUPABASE_ANON_KEY` for applicable Supabase configurations.
+The application also supports `NEXT_PUBLIC_SUPABASE_ANON_KEY` in applicable Supabase configurations.
 
-Environment variables beginning with `NEXT_PUBLIC_` are accessible to the browser and must never contain secret credentials.
+Variables beginning with `NEXT_PUBLIC_` are accessible to browser code and must never contain secret credentials.
 
-**Never commit `.env.local`, service-role credentials, PayPal secrets, Gemini API keys, or Zapier webhook URLs.**
+**Never commit `.env.local`, API secrets, service-role credentials, or Zapier webhook URLs.**
 
 ### 4. Configure Supabase
 
-Create a Supabase project and apply the SQL migrations stored in:
+Create a Supabase project and apply the SQL migrations in:
 
 ```text
 supabase/migrations/
 ```
 
-Apply migrations in filename order.
+Apply the migrations in filename order.
 
-Configure Supabase Authentication to allow the relevant local application redirect URLs.
+Configure Supabase Authentication to allow the relevant application redirect URLs.
 
-The database migrations establish the required tables, authorization policies, scenario state machine, payment ledger, AI personalization records, and reward system.
+The migrations create the required database tables, authorization policies, scenario state machine, payment records, personalization storage, and module rewards.
 
 ### 5. Start the Application
 
@@ -613,60 +599,14 @@ The database migrations establish the required tables, authorization policies, s
 npm run dev
 ```
 
-Open:
+Open http://localhost:3000.
 
-http://localhost:3000
-
-### 6. Build for Production
+### 6. Production Build
 
 ```bash
 npm run build
 npm start
 ```
-
-### 7. Test Sandbox Checkout
-
-To test PayPal Sandbox locally, create or access a **Sandbox Personal buyer account** through the PayPal Developer Dashboard.
-
-Use its test credentials when the PayPal checkout opens.
-
-A separate Sandbox Business account and REST application are required to configure the payment integration.
-
----
-
-## Testing and Quality Assurance
-
-ScamSense has undergone automated unit and integration testing across its core subsystems.
-
-The final pre-deployment QA reported:
-
-| Check | Result |
-|---|---|
-| Unit tests | 461 passed across 40 files |
-| TypeScript | Passed |
-| ESLint | Passed |
-| Production build | Passed |
-| Integration tests | 82 passed, 5 skipped, 1 failed with Gemini deliberately disabled |
-
-The remaining integration failure concerned an AI-generated Recovery Playbook note when Gemini was intentionally unavailable. Verified policy content remained accessible.
-
-Automated coverage includes:
-
-- Authentication and profile validation.
-- User authorization and data isolation.
-- Scenario state transitions.
-- Module progression.
-- Scoring calculations.
-- Training Funds ledger.
-- PayPal payment validation.
-- Duplicate transaction prevention.
-- Replay isolation.
-- Gemini output validation.
-- Evidence review.
-- Policy retrieval.
-- Badge and certificate generation.
-- Certificate ownership.
-- Email request handling.
 
 ### Testing Commands
 
@@ -677,21 +617,17 @@ npm run lint
 npm run build
 ```
 
-Additional integration and Gemini test scripts are available in the repository. Some tests require configured external services and may create test records or Sandbox orders.
-
-**Automated tests do not substitute for real browser verification of hosted PayPal checkout, email delivery, or responsive layouts.**
+Additional integration and live Gemini testing scripts are available in the repository. Some tests require configured external services and may create test records or Sandbox orders.
 
 ---
 
 ## Deployment
 
-ScamSense is hosted on **Render**.
+ScamSense is deployed on **Render** as a Node.js Web Service.
 
-**Live URL:** https://scamsense-3f74.onrender.com
+**Live application:** https://scamsense-3f74.onrender.com
 
-The application runs as a Node.js Web Service.
-
-| Configuration | Value |
+| Setting | Value |
 |---|---|
 | Deployment platform | Render |
 | Branch | `main` |
@@ -702,30 +638,35 @@ The application runs as a Node.js Web Service.
 
 Production environment variables are configured securely through Render.
 
-Supabase Authentication is configured to recognize the deployed HTTPS domain.
+Supabase authentication is configured to recognize the deployed HTTPS domain.
 
-PayPal remains in Sandbox mode; no real-money transactions are supported.
+All PayPal transactions remain in Sandbox mode.
 
 ---
 
 ## Impact and Future Potential
 
-ScamSense aims to improve digital financial awareness by making learning practical, personalized, and engaging.
+ScamSense aims to make financial safety education practical, engaging, and personally relevant.
 
-The experience has potential applications in:
+Its approach has potential applications in:
 
-- Financial literacy education.
-- University and student awareness programs.
+- University and student financial literacy programs.
+- Freelancer and online marketplace education.
+- Consumer scam-prevention initiatives.
 - Digital payment safety training.
-- Freelancer and marketplace education.
-- Community scam-prevention initiatives.
-- Consumer financial safety programs.
+- Community financial awareness programs.
+- Educational organizations.
 
-Its modular structure could support additional scenarios, languages, regions, and learning audiences.
+Its modular architecture could support additional scenarios, languages, regions, and learning audiences.
 
-Potential future enhancements include multilingual simulations, broader scam categories, and privacy-preserving aggregate learning insights for educational organizations.
+Potential future developments include:
 
-These are future opportunities, not claims of existing institutional partnerships.
+- Multilingual immersive simulations.
+- Expanded financial scam categories.
+- Region-specific educational guidance.
+- Privacy-preserving aggregated learning insights.
+
+These represent future opportunities, not claims of existing partnerships or implemented functionality.
 
 ---
 
@@ -733,23 +674,23 @@ These are future opportunities, not claims of existing institutional partnership
 
 **Build What's Next with PayPal and AI**
 
-ScamSense demonstrates how AI and payment technology can support practical financial safety education.
+ScamSense demonstrates how AI and authentic payment testing infrastructure can work together to improve financial safety education.
 
-Our approach combines three complementary capabilities:
+Our approach combines three complementary ideas:
 
-**AI makes learning personal.**
+**1. AI makes learning personal.**
 
-Google Gemini adapts experiences and provides individualized feedback.
+Google Gemini adapts scenario narratives and provides individualized reasoning feedback.
 
-**Authentic payment experiences make decisions meaningful.**
+**2. Authentic payment experiences make decisions meaningful.**
 
-PayPal Sandbox lets users interact with real checkout infrastructure without risking actual funds.
+PayPal Sandbox allows users to interact with real checkout infrastructure without risking actual funds.
 
-**Verified recovery guidance makes lessons actionable.**
+**3. Verified recovery guidance makes lessons actionable.**
 
-The Recovery Playbook connects scenario outcomes to official PayPal policies and practical next steps.
+The Recovery Playbook connects simulated experiences to official PayPal policies and practical next steps.
 
-Together, these elements help learners practice safer financial decision-making before encountering real financial risks.
+Together, these capabilities help learners practice safer financial habits before encountering real-world risks.
 
 ---
 
