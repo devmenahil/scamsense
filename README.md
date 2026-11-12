@@ -1,21 +1,28 @@
 
 # ScamSense
 
-### Scammers don't give you a practice round. ScamSense does.
+### Sharpen your sense. Scammers don't give you a practice round. We do.
 
 **Pause. Check. Verify. Then Pay.**
 
 [**🚀 Try ScamSense Live**](https://scamsense-3f74.onrender.com) · [Product Specification](docs/PRODUCT_SPEC.md) · [System Architecture](docs/ARCHITECTURE.md)
 
-> **Note:** ScamSense is hosted on Render's free tier. The first visit after inactivity may take approximately 50–60 seconds while the server starts. Subsequent navigation should be faster once the service is active.
-
 ScamSense is an **AI-powered financial scam education platform** that transforms traditional scam awareness into immersive, personalized simulations.
 
 Instead of answering multiple-choice questions, users investigate realistic financial situations, make decisions, explain their reasoning, and experience the consequences in a safe environment.
 
-Built for the **PayPal AI Hackathon**, ScamSense combines **Google Gemini**, **PayPal Sandbox**, and a **Recovery Playbook grounded in verified official PayPal policies** to help users recognize scams, make informed payment decisions, and understand what to do when something goes wrong.
+Built for the **PayPal AI Hackathon**, ScamSense combines **Google Gemini** for context-aware simulations and reasoning feedback, **PayPal Sandbox** for authentic test checkout, and a **Recovery Playbook grounded in verified official PayPal resources**. The goal is to help learners recognize scams, make evidence-based decisions, and discover relevant next steps if something goes wrong.
 
 > **All PayPal transactions use Sandbox accounts and simulated funds. No real money is transferred.**
+
+### For Hackathon Judges
+
+- **Try the app:** [Live ScamSense demo](https://scamsense-3f74.onrender.com) — create an account, complete onboarding, and start Module 1. No local installation is needed.
+- **See the PayPal integration:** Payment-enabled scenarios use the **PayPal JavaScript SDK v6** and **Orders v2 API** for Sandbox order creation, approval, capture, and server-side verification. A **PayPal Sandbox Personal buyer account** is needed to approve a test payment; [instructions are below](#step-3--paypal-sandbox-checkout).
+- **See the AI integration:** **Gemini** adapts scenario context to the learner's profile, evaluates written reasoning, and supports the Recovery Playbook and Sensei Kenshi. Scenario truth, scores, and payment outcomes remain rule-based.
+- **Run or inspect the source:** See [Running Locally](#running-locally--developers-only), [Technology Stack](#technology-stack), and the linked [architecture documentation](docs/ARCHITECTURE.md). The root-level `LICENSE` contains the project's open-source terms.
+
+**Note:** The free-tier Render service may need to wake up after inactivity; the initial load can take approximately one minute.
 
 ---
 
@@ -35,12 +42,12 @@ People need opportunities to practice identifying suspicious behavior, verifying
 
 ScamSense provides a personalized learning environment where users can:
 
-1. Enter realistic scenarios tailored to their occupations, financial activities, and goals.
+1. Experience realistic scenarios whose context and narrative reflect their backgrounds and financial activities.
 2. Investigate messages, websites, invoices, and marketplace interactions.
 3. Make meaningful financial decisions, including PayPal Sandbox payments where applicable.
 4. Explain the evidence behind their decisions.
 5. Receive personalized reasoning feedback powered by Google Gemini.
-6. Revisit completed scenarios to discover important evidence.
+6. Reveal scenario evidence after making a decision, then revisit completed scenarios for practice.
 7. Learn relevant protection and recovery procedures grounded in official PayPal policies.
 8. Track progress, earn badges, receive certificates, and download analysis reports.
 
@@ -62,7 +69,7 @@ ScamSense is deployed on Render and can be accessed directly through a web brows
 
 ### Step 1 — Create Your Account
 
-> **Note:** Password recovery is not yet functional. Your progress is linked to your ScamSense account, so it is advisable to save your login credentials somewhere securely. 
+> **Note:** Password recovery is not yet functional. Your progress is linked to your ScamSense account, so it is advisable to save your login credentials somewhere securely.
 
 1. Open [ScamSense](https://scamsense-3f74.onrender.com).
 2. Select **Sign In**.
@@ -188,7 +195,7 @@ The report includes your decisions, reasoning, evidence recognition, scores, and
 
 ### 1. AI-Personalized Simulations
 
-ScamSense uses **Google Gemini** to personalize scenario narratives based on user profiles.
+ScamSense uses **Google Gemini** to personalize the **context and narrative** of established scenarios based on user profiles.
 
 Personalization considers:
 
@@ -197,7 +204,7 @@ Personalization considers:
 - Financial goals
 - Meaningful custom profile descriptions
 
-For example, a student, freelancer, and online shopper may encounter different contextual details within the same underlying scenario.
+For example, a student who freelances might encounter a payment request framed around a client project, making the scenario feel relevant to their everyday financial activities.
 
 Our hybrid approach combines:
 
@@ -422,10 +429,12 @@ ScamSense combines adaptive AI personalization with deterministic backend rules 
 | Supabase Auth | Authentication and sessions |
 | Supabase PostgreSQL | Profiles, attempts, scores, progress, and financial ledger |
 | Supabase Storage | Private certificate PDF storage |
+| Prisma | Database access and typed data modeling |
 | Zapier + Gmail | Certificate email delivery |
 | React PDF | Certificate and analysis report generation |
 | Vitest | Automated testing |
 | Render | Cloud deployment |
+| Claude Code | AI-assisted development and implementation support |
 
 ---
 
@@ -652,33 +661,36 @@ All PayPal transactions remain in Sandbox mode.
 
 ## Impact and Future Potential
 
-ScamSense aims to make financial safety education practical, engaging, and personally relevant.
+ScamSense aims to bridge the gap between **knowing about scams and recognizing them in the moment**. Its approach could support students, freelancers, online shoppers, marketplace sellers, and digital-payment communities.
 
-Its approach has potential applications in:
+**Our long-term vision is B2B2C:** payment providers such as PayPal, online marketplaces, and financial institutions could offer tailored ScamSense learning experiences to their customers. This is a proposed distribution model, **not an existing partnership**.
 
-- University and student financial literacy programs.
-- Freelancer and online marketplace education.
-- Consumer scam-prevention initiatives.
-- Digital payment safety training.
-- Community financial awareness programs.
-- Educational organizations.
+We also plan to use **AI alongside demographic-level scam statistics** to prioritize the scenarios a learner is more likely to encounter, making training relevant from the start. Today, Gemini personalizes **scenario context and narrative**; demographic-informed scenario ordering is a **future capability**.
 
-Its modular architecture could support additional scenarios, languages, regions, and learning audiences.
+Other potential developments include:
 
-Potential future developments include:
+- More scam categories and progressively adaptive learning paths.
+- Multilingual simulations and region-specific educational guidance.
+- Clearer access to relevant payment-platform protections, reporting procedures, and recovery information.
+- Privacy-preserving, aggregated insights into learning outcomes.
 
-- Multilingual immersive simulations.
-- Expanded financial scam categories.
-- Region-specific educational guidance.
-- Privacy-preserving aggregated learning insights.
-
-These represent future opportunities, not claims of existing partnerships or implemented functionality.
+These are future opportunities, not claims of implemented features or existing partnerships.
 
 ---
 
 ## Built for the PayPal AI Hackathon
 
 **Build What's Next with PayPal and AI**
+
+### Tools and Integrations
+
+- **PayPal JavaScript SDK v6 + Orders v2 API:** Official hosted Sandbox checkout and verified test transactions, reflected in simulated Training Funds.
+- **Google Gemini API:** Contextual narrative personalization, written-reasoning evaluation, Recovery Playbook explanations, and Sensei Kenshi.
+- **Supabase:** Authentication, PostgreSQL-backed learning data, and private certificate storage.
+- **Prisma:** Database access and typed data modeling.
+- **Zapier + Gmail:** Optional delivery of certificate PDFs (subject to the configured trial/service availability).
+- **Render:** Hosting the live Next.js application.
+- **Claude Code:** AI-assisted implementation and development, with human review and testing.
 
 ScamSense demonstrates how AI and authentic payment testing infrastructure can work together to improve financial safety education.
 
@@ -712,7 +724,7 @@ ScamSense is not affiliated with, endorsed by, or certified by PayPal or Google.
 
 ---
 
-### Scammers don't give you a practice round. ScamSense does.
+### ScamSense — Sharpen your sense. Scammers don't give you a practice round. We do.
 
 **Pause. Check. Verify. Then Pay.**
 
