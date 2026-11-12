@@ -15,6 +15,21 @@ Built for the **PayPal AI Hackathon**, ScamSense combines **Google Gemini** for 
 
 > **All PayPal transactions use Sandbox accounts and simulated funds. No real money is transferred.**
 
+## ScamSense in Action
+
+A look at ScamSense's immersive learning experience, authentic PayPal Sandbox integration, and personalized AI feedback.
+
+### Meet ScamSense
+![ScamSense Homepage](screenshots/homepage.png)
+
+### Experience Real PayPal Sandbox Checkout
+![PayPal Sandbox Checkout](screenshots/paypal-sandbox-checkout.png)
+
+### Learn with Gemini-Powered Feedback
+![Gemini-Powered Reasoning Feedback](screenshots/AI-feedback.png)
+
+---
+
 ### For Hackathon Judges
 
 - **Try the app:** [Live ScamSense demo](https://scamsense-3f74.onrender.com) — create an account, complete onboarding, and start Module 1. No local installation is needed.
